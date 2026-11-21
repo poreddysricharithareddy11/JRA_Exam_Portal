@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1932 1932">
+  <title>Jayarama Associates</title>
+  <!-- blue roof / "A" -->
+  <path fill="#0b93dc" d="M285,1197 L940,45 L1617,1197 L1480,1197 L951,272 L422,1197 Z"/>
+  <!-- skyline -->
+  <g fill="#ee1650">
+    <path d="M730,695 L848,695 L848,1080 L880,1080 L880,615 L918,615 L918,545 L931,545 L931,455 L935,355 L945,355 L949,455 L960,545 L972,545 L972,612 L1008,612 L1008,1197 L730,1197 Z"/>
+    <path d="M580,1197 L580,1030 L650,960 L650,915 L705,810 L705,1197 Z"/>
+    <path d="M490,1197 L555,1090 L555,1197 Z"/>
+    <path d="M1040,770 L1105,885 L1160,885 L1160,970 L1190,970 L1200,875 L1210,970 L1265,975 L1265,1197 L1040,1197 Z"/>
+    <path d="M1290,1030 L1410,1197 L1290,1197 Z"/>
+  </g>
+  <!-- wordmark -->
+  <g font-family="'Times New Roman', Times, Georgia, serif" font-weight="700">
+    <text x="82" y="1640" font-size="400" fill="#0b93dc">J</text>
+    <text x="268" y="1612" font-size="330" fill="#0b93dc" textLength="1545" lengthAdjust="spacingAndGlyphs">AYARAMA</text>
+    <text x="455" y="1855" font-size="150" fill="#ee1650" textLength="990" lengthAdjust="spacingAndGlyphs">ASSOCIATES</text>
+  </g>
+</svg>

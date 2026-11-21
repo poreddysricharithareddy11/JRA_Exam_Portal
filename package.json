@@ -1,0 +1,33 @@
+{
+  "name": "jayarama-exam-portal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Proctored MCQ examination portal with admin and candidate logins",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node test/parser.js && node test/pdf.js && node test/smoke.js && node test/pool.js && node test/import.js && node test/admin.js && node test/mail.js",
+    "test:ui": "node test/ui.js && node test/exam.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
+    "better-sqlite3": "13.2.0",
+    "compression": "1.8.2",
+    "cookie-parser": "1.4.7",
+    "dotenv": "18.0.10",
+    "express": "5.3.0",
+    "express-rate-limit": "8.7.5",
+    "helmet": "8.3.0",
+    "jsonwebtoken": "9.0.3",
+    "mammoth": "1.13.0",
+    "multer": "2.5.0",
+    "nodemailer": "10.6.1",
+    "pdfjs-dist": "^6.5.438",
+    "pdfkit": "0.21.0",
+    "tesseract.js": "^7.0.0",
+    "word-extractor": "1.0.4"
+  }
+}
