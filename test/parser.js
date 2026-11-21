@@ -252,6 +252,21 @@ async function docxOf(items, tableRows) {
     assert.equal(w.questions.length, 2); assert.equal(w.questions[0].options[3], 'Temporary Bench used for levelling', 'a wrapped option is still one option');
   });
 
+  await t('a heading glued to a question line is cut off ("CALIBRATION (Q19 – Q32) 19. What ...")', () => {
+    const r = parseQuestions(['18. What is the surveying method called when an unknown occupied station P is located by observing known points A, B, and C?', 'A) Triangulation', 'B) Resection', 'C) Traversing', 'D) Foresight Leveling',
+      'CALIBRATION (Q19 – Q32) 19. What is the angular accuracy of the Kanq KQS-M65 Total Station used in training?', 'A) 1 second (1")', 'B) 2 seconds (2")', 'C) 5 seconds (5")', 'D) 10 seconds (10")',
+      '20. What is checked in the two-peg test?', 'A) Level', 'B) Collimation', 'C) Plumb', 'D) Tape',
+      'SECTION D: Traversing 21. What is a closed traverse?', 'A) a', 'B) b', 'C) c', 'D) d',
+      'TRAVERSING 22. What is an open traverse?', 'A) a', 'B) b', 'C) c', 'D) Foresight Leveling CALIBRATION (Q23 – Q30)',
+      '23. ISO 9001. The standard is for?', 'A) a', 'B) b', 'C) c', 'D) d'].join('\n'));
+    assert.equal(r.questions.length, 6); assert.ok(r.questions.every((q) => q.options.length === 4));
+    assert.equal(r.questions[1].text, 'What is the angular accuracy of the Kanq KQS-M65 Total Station used in training?');
+    assert.equal(r.questions[3].text, 'What is a closed traverse?'); assert.equal(r.questions[4].text, 'What is an open traverse?');
+    assert.equal(r.questions[4].options[3], 'Foresight Leveling', 'a heading stuck after the last option is removed');
+    assert.equal(r.questions[5].text, 'ISO 9001. The standard is for?', 'ordinary text that merely contains a number is untouched');
+    assert.ok(!r.questions.some((q) => /CALIBRATION|SECTION|TRAVERSING/.test(q.text + q.options.join(' '))), 'no heading text anywhere');
+  });
+
   /* ---------------- all questions first, ANSWER KEY table at the end ---------------- */
   const KEY = ['A', 'A', 'B', 'D', 'B', 'A', 'B', 'B', 'A', 'B', 'C', 'B', 'A', 'B', 'C', 'B', 'A', 'B', 'B', 'B', 'B', 'B', 'B', 'C', 'B', 'B', 'B', 'B', 'A', 'A', 'B', 'B', 'A', 'A', 'C', 'A', 'A', 'B', 'A', 'B', 'B', 'B', 'B', 'B', 'A', 'A', 'B', 'B', 'B', 'B'];
   const PAPER50 = Array.from({ length: 50 }, (_, i) => `${i + 1}. Which statement number ${i + 1} about surveying is correct?\nA. Option A\nB. Option B\nC. Option C\nD. Option D`).join('\n');

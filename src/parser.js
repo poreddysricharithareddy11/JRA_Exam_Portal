@@ -206,6 +206,32 @@ function stripNoise(lines) {
 const SECTION_KW = /^(?:section|sec\.?|part|module|unit|chapter|topic|category|group|subject|paper|segment|block|level|round)\s*[-:.]?\s*(?:[A-Za-z]|[IVXivx]{1,4}|\d{1,2})(?=\s|[-:.)–—(]|$)/i;
 const RANGE_LINE = /^[(\[]?\s*(?:questions?|qns?\.?|q\.?)\s*\d{1,3}\s*(?:to|-|–|—|through)\s*(?:q\.?\s*)?\d{1,3}\b/i;     // "Questions 1 – 10", "Q11-Q20"
 const INSTRUCTION_LINE = /^(?:general\s+)?(?:instructions?|directions?)\s*(?:to\s+candidates)?\s*[:\-–—]?\s*$/i;
+/**
+ * A heading can be glued onto the same line as a question (a PDF export often does this):
+ *   "CALIBRATION (Q19 – Q32) 19. What is the angular accuracy ...?"      "SECTION C: Levelling 19. What is ...?"      "CALIBRATION 19. What is ...?"
+ * or sit at the end of the previous line:  "D) Foresight Leveling CALIBRATION (Q19 – Q32)".
+ * Cut the heading off and keep the question. A heading before a number is only cut when that number is the NEXT question number
+ * (or the heading itself announces it with a range), so ordinary text like "ISO 9001. The standard ..." is never touched.
+ */
+const RANGE_TAG = '[(\\[]\\s*(?:[Qq]uestions?|QUESTIONS?|[Qq][Nn][Ss]?\\.?|[Qq]\\.?)\\s*(\\d{1,3})\\s*(?:to|TO|To|-|–|—|through)\\s*(?:[Qq]\\.?\\s*)?\\d{1,3}\\s*[)\\]]';
+function stripHeadingMerges(lines) {
+  let last = 0;
+  const front = new RegExp('^[^0-9?]*?\\s*' + RANGE_TAG + '\\s*(\\S.*)$');                                          // "CALIBRATION (Q19 – Q32) 19. What ..."
+  const sect = /^(?:section|sec\.?|part|module|unit|chapter|topic|category)\s*[-:.]?\s*(?:[A-Za-z]|[IVXivx]{1,4}|\d{1,2})\b[^0-9?]{0,70}?\s+(?=\d{1,4}\s*[.):]\s*\S)/i;   // "SECTION C: Levelling 19. What ..."
+  const caps = /^(?:[A-Z][A-Z0-9&'’/\-]*\s+){1,6}(?=\d{1,4}\s*[.):]\s*\S)/;                                         // "CALIBRATION 19. What ..."
+  const back = new RegExp('\\s+(?:[A-Z][A-Z0-9&\'’/\\-]{2,}\\s+)*[A-Z][A-Z0-9&\'’/\\-]{2,}\\s*' + RANGE_TAG + '\\s*$');   // "... D) Leveling CALIBRATION (Q19 – Q32)"  (heading words are ALL CAPS)
+  return lines.map((l) => {
+    let out = l, m;
+    if ((m = front.exec(out)) && qMatch(m[2])) out = m[2];                                         // the range tag (m[1]) is the heading's own number range
+    else if ((m = sect.exec(out)) && (q => q && q.no === last + 1)(qMatch(out.slice(m[0].length)))) out = out.slice(m[0].length);
+    else if ((m = caps.exec(out)) && (q => q && q.no === last + 1)(qMatch(out.slice(m[0].length)))) out = out.slice(m[0].length);
+    if (out.length > 12 && (m = back.exec(out)) && m.index > 8) out = out.slice(0, m.index).trim();   // heading stuck to the end of a line
+    const q = qMatch(out);
+    if (q) last = q.no;
+    return out;
+  });
+}
+
 function dropHeadings(lines) {
   const complete = (l) => { const o = l && optMatch(l); return !!l && (findChain(l) || (o && o.letter >= 'D')); };   // a line that ended a block of options
   return lines.filter((l, i) => {
@@ -553,7 +579,7 @@ function parseQuestions(raw) {
   const all = normalise(raw).filter(Boolean);
   const split = splitKey(all);
   const key = split.key;
-  const lines = prepOptionRuns(explode(dropHeadings(stripNoise(split.lines))));         // split runs-together lines into one line per question, unify option styles
+  const lines = prepOptionRuns(explode(dropHeadings(stripHeadingMerges(stripNoise(split.lines)))));         // split runs-together lines into one line per question, unify option styles
 
   // Read the paper in two independent ways and keep the better result:
   //   numbered : question numbers mark where each question starts
