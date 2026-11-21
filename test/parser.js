@@ -195,6 +195,73 @@ async function docxOf(items, tableRows) {
     assert.equal(r.questions.length, 2000); assert.ok(Date.now() - t0 < 3000, 'under 3s');
   });
 
+  /* ---------------- 4 options per question, questions never run into each other ---------------- */
+  const SEVEN = [['What is the capital of India?', CAPITAL, 1], ['Which planet is the largest?', ['Earth', 'Mars', 'Jupiter', 'Venus'], 2], ['What is 12 + 15?', ['25', '26', '27', '28'], 2],
+    ['The Sun rises in the?', ['East', 'West', 'North', 'South'], 0], ['Which gas do plants absorb?', ['Oxygen', 'Carbon dioxide', 'Nitrogen', 'Helium'], 1],
+    ['Who wrote the national anthem?', ['Bankim Chandra', 'Rabindranath Tagore', 'Sarojini Naidu', 'Premchand'], 1], ['Days in a leap year?', ['364', '365', '366', '367'], 2]];
+  const exactly7 = (r, label) => {
+    assert.equal(r.questions.length, 7, `${label}: 7 questions (got ${r.questions.length})`);
+    SEVEN.forEach(([stem, opts], i) => hasQ(r, i, stem, opts));
+    assert.ok(r.questions.every((q) => q.options.length === 4), `${label}: every question has 4 options`);
+    assert.ok(!r.warnings.some((w) => /exactly 4 options|unusually long/.test(w)), `${label}: no warnings`);
+  };
+  await t('a paper whose questions run together on ONE line is split into 7 separate questions', () => {
+    exactly7(parseQuestions(SEVEN.map(([q, o], i) => `${i + 1}. ${q} ` + o.map((x, k) => `${'ABCD'[k]}. ${x}`).join(' ')).join(' ')), 'one line');
+    exactly7(parseQuestions(SEVEN.map(([q, o], i) => `(${i + 1}) ${q} ` + o.map((x, k) => `(${'ABCD'[k]}) ${x}`).join(' ')).join(' ')), 'one line, (1) style');
+  });
+  await t('option styles: "A )", "(1) (2) (3) (4)", bare "A text", unnumbered, blank lines between', () => {
+    exactly7(parseQuestions(SEVEN.map(([q, o], i) => `${i + 1} . ${q}\n` + o.map((x, k) => `${'ABCD'[k]} ) ${x}`).join('\n')).join('\n')), 'A )');
+    exactly7(parseQuestions(SEVEN.map(([q, o], i) => `${i + 1}. ${q}\n` + o.map((x, k) => `(${k + 1}) ${x}`).join('\n')).join('\n')), '(1)-(4)');
+    exactly7(parseQuestions(SEVEN.map(([q, o], i) => `${i + 1}. ${q}\n` + o.map((x, k) => `${'ABCD'[k]} ${x}`).join('\n')).join('\n')), 'bare letters');
+    exactly7(parseQuestions(SEVEN.map(([q, o]) => `${q}\n` + o.map((x, k) => `(${'ABCD'[k]}) ${x}`).join('\n')).join('\n')), 'unnumbered');
+    exactly7(parseQuestions(SEVEN.map(([q, o], i) => `${i + 1}. ${q}\n\n` + o.map((x, k) => `${'ABCD'[k]}) ${x}\n`).join('\n')).join('\n')), 'blank lines');
+  });
+  await t('the same stem repeated many times is NOT thrown away as a page header', () => {
+    const r = parseQuestions(Array.from({ length: 6 }, (_, i) => `Which of the following is correct?\nA) option ${i}a\nB) option ${i}b\nC) option ${i}c\nD) option ${i}d`).join('\n'));
+    assert.equal(r.questions.length, 6); assert.ok(r.questions.every((q) => /Which of the following is correct/.test(q.text) && q.options.length === 4));
+  });
+  await t('a question that does not have exactly 4 options is reported', () => {
+    const r = parseQuestions('1. One?\nA) a\nB) b\nC) c\nD) d\n2. Two?\nA) a\nB) b\nC) c\n3. Three?\nA) a\nB) b\nC) c\nD) d\nE) e');
+    assert.ok(r.warnings.some((w) => /exactly 4 options/.test(w) && /Q2 \(3\)/.test(w) && /Q3 \(5\)/.test(w)), r.warnings.join(' | '));
+  });
+
+  /* ---------------- all questions first, ANSWER KEY table at the end ---------------- */
+  const KEY = ['A', 'A', 'B', 'D', 'B', 'A', 'B', 'B', 'A', 'B', 'C', 'B', 'A', 'B', 'C', 'B', 'A', 'B', 'B', 'B', 'B', 'B', 'B', 'C', 'B', 'B', 'B', 'B', 'A', 'A', 'B', 'B', 'A', 'A', 'C', 'A', 'A', 'B', 'A', 'B', 'B', 'B', 'B', 'B', 'A', 'A', 'B', 'B', 'B', 'B'];
+  const PAPER50 = Array.from({ length: 50 }, (_, i) => `${i + 1}. Which statement number ${i + 1} about surveying is correct?\nA. Option A\nB. Option B\nC. Option C\nD. Option D`).join('\n');
+  const rows10 = Array.from({ length: 10 }, (_, r) => [0, 1, 2, 3, 4].map((c) => c * 10 + r + 1));
+  const DESC = 'Reference answer key for the 50 A questions on Fundamentals of Surveying & Kanq KQS-M65 Total Station Operations.';
+  const keyCheck = (text, label) => {
+    const r = parseQuestions(PAPER50 + '\n' + text);
+    assert.equal(r.questions.length, 50, `${label}: 50 questions`);
+    assert.ok(r.questions.every((q) => q.options.length === 4), `${label}: 4 options each`);
+    const bad = r.questions.map((q, i) => (q.correct_index === 'ABCD'.indexOf(KEY[i]) ? 0 : i + 1)).filter(Boolean);
+    assert.deepEqual(bad, [], `${label}: wrong/missing answers for Q${bad.join(',')}`);
+  };
+  await t('answer key table at the end: "Q. No. / Ans" in five column pairs (as in the screenshot)', () => {
+    keyCheck(`ANSWER KEY (QUESTIONS 1 – 50)\n${DESC}\nQ. No. Ans Q. No. Ans Q. No. Ans Q. No. Ans Q. No. Ans\n` + rows10.map((r) => r.map((n) => `${n} ${KEY[n - 1]}`).join(' ')).join('\n'), 'picture');
+  });
+  await t('answer key table variants: one cell per line, one line, pipes, one pair per row, footer after', () => {
+    keyCheck('ANSWER KEY (QUESTIONS 1 – 50)\n' + DESC + '\nQ. No.\nAns\n' + KEY.map((a, i) => `${i + 1}\n${a}`).join('\n'), 'cells');
+    keyCheck('ANSWER KEY ' + DESC + ' Q. No. Ans ' + KEY.map((a, i) => `${i + 1} ${a}`).join(' '), 'one line');
+    keyCheck('Answer Key\nQ.No | Answer\n' + KEY.map((a, i) => `${i + 1} | (${a.toLowerCase()})`).join('\n'), 'pipes');
+    keyCheck('ANSWERS\n' + KEY.map((a, i) => (i % 2 ? `Q${i + 1} - ${a}` : `${i + 1}. ${a}`)).join('\n'), 'pairs');
+    keyCheck('ANSWER KEY\n' + KEY.map((a, i) => `${i + 1} ${a}`).join('\n') + '\nPage 3 of 3\nwww.example.com', 'footer');
+  });
+  await t('PDF: 50 questions, then an ANSWER KEY page with a "Q. No. / Ans" grid', async () => {
+    const buf = await new Promise((res) => {
+      const d = new PDFDocument({ margin: 40 }); const b = []; d.on('data', (c) => b.push(c)); d.on('end', () => res(Buffer.concat(b)));
+      for (let n = 1; n <= 50; n++) { if (d.y > 720) d.addPage(); d.text(`${n}. Which statement number ${n} about surveying is correct?`); ['A', 'B', 'C', 'D'].forEach((l) => d.text(`${l}. Option ${l}`, { indent: 14 })); d.moveDown(0.4); }
+      d.addPage(); d.fontSize(14).text('ANSWER KEY (QUESTIONS 1 – 50)').moveDown(0.3); d.fontSize(10).text(DESC).moveDown();
+      let y = d.y; const cell = (s, x, yy) => d.text(String(s), x, yy, { width: 46, lineBreak: false });
+      for (let c = 0; c < 5; c++) { cell('Q. No.', 40 + c * 100, y); cell('Ans', 90 + c * 100, y); } y += 22;
+      for (let r = 0; r < 10; r++) { for (let c = 0; c < 5; c++) { const q = c * 10 + r + 1; cell(q, 40 + c * 100, y); cell(KEY[q - 1], 90 + c * 100, y); } y += 22; }
+      d.end();
+    });
+    const r = parseQuestions((await extractDocument({ originalname: 'bank.pdf', buffer: buf })).text);
+    assert.equal(r.questions.length, 50); assert.ok(r.questions.every((q) => q.options.length === 4));
+    assert.deepEqual(r.questions.map((q) => q.correct_index), KEY.map((a) => 'ABCD'.indexOf(a)), 'all 50 answers matched from the key table');
+  });
+
   if (!process.exitCode) console.log(`PARSER TESTS PASSED (${n} checks)`);
   process.exit();
 })();

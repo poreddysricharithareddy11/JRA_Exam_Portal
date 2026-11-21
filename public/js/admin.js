@@ -111,7 +111,6 @@ async function adminExam(id, tab) {
     <div class="row mb"><h1 style="margin:0">${esc(exam.name)}</h1>${chip(exam.status)}
       <div class="right row"><button class="btn ${exam.published ? '' : 'ok'}" id="pub">${exam.published ? 'Unpublish' : 'Publish exam'}</button></div></div>
     <div class="meta mb"><span>🗓 ${fmtDT(exam.start_at)} → ${fmtDT(exam.end_at)}</span><span>⏱ ${dur(exam.duration_min)}</span><span>🎯 Pass ${exam.pass_percent}%</span><span>➖ ${exam.negative_marks ? '-' + exam.negative_marks + ' per wrong' : 'No negative marking'}</span></div>
-    ${!exam.published ? '<div class="alert warn">Draft — not visible to candidates until you publish it.</div>' : ''}
     <div class="tabs"><a href="#/admin/exam/${id}/questions" class="${tab === 'questions' ? 'on' : ''}">Questions &amp; answers (${sets.reduce((s, x) => s + x.count, 0)})</a>
       <a href="#/admin/exam/${id}/results" class="${tab === 'results' ? 'on' : ''}">Results (${results.summary.submitted})</a>
       <a href="#/admin/exam/${id}/invite" class="${tab === 'invite' ? 'on' : ''}">✉️ Send email reminders</a>

@@ -121,7 +121,7 @@ const extractText = async (file) => (await extractDocument(file)).text;
 function parseAnswerKey(raw) {
   const key = {};
   const text = String(raw).normalize('NFKC').replace(/\r/g, '\n').replace(/\*\*|__/g, '');
-  const re = /(?:^|[\s,;|(\[])(?:Q(?:uestion)?\.?\s*)?(\d{1,4})\s*[.):\-–—=]*\s*[(\[]?\s*(?:option\s*)?([A-Ha-h])\s*[)\]]?(?=[\s,;|.)\]]|$)/gi;
+  const re = /(?:^|[\s,;|(\[])(?:Q(?:uestion)?\.?\s*)?(\d{1,4})\s*[.):\-–—=|]*\s*[(\[]?\s*(?:option\s*)?([A-Ha-h])\s*[)\]]?(?=[\s,;|.)\]]|$)/gi;
   let m;
   while ((m = re.exec(text))) { const n = parseInt(m[1], 10); if (!(n in key)) key[n] = letterIdx(m[2]); }
 
@@ -151,14 +151,14 @@ const Q_PATTERNS = [
   /^(\d{1,4})\s*[.:\-–—](?!\d)\s*(.*)$/,                         // 1. / 1: / 1 -   (not decimals like 2.5)
 ];
 const OPT_PATTERNS = [
-  /^[(\[]?([A-Ha-h])[)\]]\s*(.*)$/,                              // A) / (A) / [A]
-  /^([A-Ha-h])\s*[.:]\s*(.*)$/,                                  // A. / A:
-  /^([A-Ha-h])\s*[-–—]\s+(.*)$/,                                 // A - text
+  /^[(\[]?([A-Ha-h])\s?[)\]]\s*(.*)$/,                           // A) / (A) / [A] / A )
+  /^([A-Da-d]|[E-H])\s?[.:]\s*(.*)$/,                            // A. / A: / A .   (lowercase e-h never count, so "e.g." is not an option)
+  /^([A-Da-d]|[E-H])\s*[-–—]\s+(.*)$/,                           // A - text
 ];
 const ANS_RE = /^(?:the\s+)?(?:correct\s+|right\s+)?(?:answer|ans|option|choice|key)\s*(?:is\b)?\s*[:=\-–—.]?\s*(.*)$/i;
 const EXPL_RE = /^(?:explanation|solution|rationale|reason|hint|note|working|sol)\s*[:\-–—]/i;
 const KEY_HDR = /^(?:the\s+)?(answer\s*key|answers?|ans\s*key|answer\s*sheet|key|solutions?)\s*[:\-–—]?\s*(.*)$/i;
-const KEY_PAIRS = /^(?:(?:q\.?\s*)?\d{1,4}\s*[.):\-–—=]?\s*[(\[]?[A-Ha-h][)\]]?[\s,;|]*)+$/i;   // "1-B, 2-C"  /  "3 A"
+const KEY_PAIRS = /^(?:(?:q\.?\s*)?\d{1,4}\s*[.):\-–—=|]?\s*[(\[]?[A-Ha-h][)\]]?[\s,;|]*)+$/i;   // "1-B, 2-C"  /  "3 A"
 const NOISE_LINE = /^(?:page\s*)?\d{1,3}\s*(?:\/|of)\s*\d{1,3}$|^[-–—\s]*\d{1,3}[-–—\s]*$/i;
 
 const qMatch = (l) => { for (const re of Q_PATTERNS) { const m = re.exec(l); if (m) return { no: parseInt(m[1], 10), text: (m[2] || '').trim() }; } return null; };
@@ -176,10 +176,24 @@ function stripNoise(lines) {
   const freq = new Map();
   const sig = (l) => l.replace(/\d+/g, '#').toLowerCase();
   lines.forEach((l) => { if (l.length > 6) freq.set(sig(l), (freq.get(sig(l)) || 0) + 1); });
-  return lines.filter((l) => {
+  // A question stem can legitimately repeat ("Which of the following is correct?"), so a repeated line is only a page header/footer
+  // when it is NOT part of a question: not numbered, not an option, not an answer, not a question mark, and not the text right
+  // before an "A)" option (a stem, possibly wrapped over up to three lines).
+  const isStem = (i) => {
+    if (i > 0 && qMatch(lines[i - 1]) && /\d+\s*(?:\/|of)\s*\d+|\bpage\s*\d+/i.test(lines[i])) return false;   // right after a numbered question, a page-number line ("Printed ... 3/9", "Page 3") is a footer
+    if (/[?]\s*$/.test(lines[i])) return true;
+    for (let d = 1; d <= 3; d++) {                       // walk down to the first option: the line is a stem only if "A)" comes before any numbered question
+      const nx = lines[i + d];
+      if (!nx || qMatch(nx)) return false;
+      const o = optMatch(nx);
+      if (o) return o.letter === 'A';
+    }
+    return false;
+  };
+  return lines.filter((l, i) => {
     if (!l) return false;
     if (NOISE_LINE.test(l)) return false;
-    if (l.length > 6 && freq.get(sig(l)) >= 3 && !qMatch(l) && !optMatch(l) && !ANS_RE.test(l)) return false;
+    if (l.length > 6 && freq.get(sig(l)) >= 3 && !qMatch(l) && !optMatch(l) && !ANS_RE.test(l) && !isStem(i)) return false;
     return true;
   });
 }
@@ -202,16 +216,93 @@ function splitInline(letter, rest) {
   return parts;
 }
 
-/** "1. What is 2+2? A) 3 B) 4 C) 5" -> { stem, options } when all options sit on the question line. */
-function inlineQuestion(text) {
-  const re = /(?:^|\s)[(\[]?[Aa][)\]]\s*(?=\S)/g;
+/**
+ * The earliest marker for `letter` at or after `from`: "A)", "(A)", "[A]", "A )", "A.", "A:" (preceded by a space or the start,
+ * and for the dot style followed by a space). Returns { start, end } where `end` is where the option's own text begins.
+ */
+function markerAt(line, letter, from) {
+  const re = new RegExp('(^|\\s)(?:[(\\[]?' + letter + '\\s?[)\\]]|' + letter + '\\s?[.:](?=\\s))\\s*', 'gi');
+  re.lastIndex = from;
   let m;
-  while ((m = re.exec(text))) {
-    const stem = text.slice(0, m.index).trim();
-    const opts = splitInline('A', text.slice(m.index + m[0].length));
-    if (stem && opts.length >= 2) return { stem, options: opts };
+  while ((m = re.exec(line))) {
+    const marker = m[0].slice(m[1].length);
+    const dotStyle = !/[)\]]/.test(marker);
+    const ch = marker.replace(/^[(\[]/, '')[0];
+    if (dotStyle && /[e-h]/.test(ch)) continue;                 // lowercase "e." / "f." are words, not options
+    return { start: m.index + m[1].length, end: m.index + m[0].length };
   }
   return null;
+}
+
+/** Options A, B, C, D... that appear IN ORDER inside one line (>= 2 of them). Returns their markers, or null. */
+function findChain(line) {
+  for (let from = 0; from < line.length;) {
+    const a = markerAt(line, 'A', from);
+    if (!a) return null;
+    const chain = [a];
+    let cur = a;
+    for (const L of 'BCDEFGH') { const n = markerAt(line, L, cur.end); if (!n) break; chain.push(n); cur = n; }
+    if (chain.length >= 2) return chain;
+    from = a.end;
+  }
+  return null;
+}
+
+/** "1. What is 2+2? A) 3 B) 4 C) 5 D) 6" -> { stem, options } when all the options sit on the question line. */
+function inlineQuestion(text) {
+  const chain = findChain(text);
+  if (!chain) return null;
+  const stem = text.slice(0, chain[0].start).trim();
+  const options = chain.map((c, i) => ({ letter: LETTERS[i], text: text.slice(c.end, chain[i + 1] ? chain[i + 1].start : text.length).trim() }));
+  return stem ? { stem, options } : null;
+}
+
+/**
+ * A PDF/Word export can run several questions together on one line:  "1. Q A. a B. b C. c D. d 2. Q A. a ...".
+ * Cut such a line where the NEXT question number (n+1) starts, provided that piece has its own run of options.
+ */
+function explode(lines) {
+  const out = [], work = lines.slice();
+  while (work.length) {
+    let line = work.shift();
+    const q = qMatch(line);
+    const chain = q ? findChain(line) : null;
+    if (q && chain) {
+      const rest = line.slice(chain[chain.length - 1].end);
+      const n = q.no + 1;
+      const re = new RegExp('\\s([(\\[]?(?:Q(?:uestion)?\\s*\\.?\\s*)?' + n + '\\s*[.):\\-–—\\]])\\s+(?=\\S)');
+      const m = re.exec(rest);
+      if (m) {
+        const cut = chain[chain.length - 1].end + m.index + 1;
+        const tail = line.slice(cut).trim();
+        if (findChain(tail)) { work.unshift(tail); line = line.slice(0, cut).trim(); }
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+/** Options written as "(1) (2) (3) (4)" or as bare "A text / B text / C text / D text" lines become "A) ..." so one reader handles them all. */
+function prepOptionRuns(lines) {
+  const out = lines.slice();
+  // (1)..(k) groups that restart at (1) for every question
+  const runs = [];
+  for (let i = 0, cur = null; i < out.length; i++) {
+    const m = /^[(\[]([1-8])[)\]]\s*(.*)$/.exec(out[i]);
+    if (m && +m[1] === 1) { cur = { idx: [i] }; runs.push(cur); }
+    else if (m && cur && +m[1] === cur.idx.length + 1) cur.idx.push(i);
+  }
+  const real = runs.filter((r) => r.idx.length >= 2);
+  if (real.length >= 2) for (const r of real) r.idx.forEach((i, k) => { out[i] = out[i].replace(/^[(\[][1-8][)\]]\s*/, LETTERS[k] + ') '); });
+  // exactly four consecutive lines "A text", "B text", "C text", "D text"
+  for (let i = 0; i + 3 < out.length; i++) {
+    if ([0, 1, 2, 3].every((k) => !optMatch(out[i + k]) && new RegExp('^' + LETTERS[k] + '\\s+\\S').test(out[i + k]))) {
+      for (let k = 0; k < 4; k++) out[i + k] = out[i + k].replace(/^[A-D]\s+/, LETTERS[k] + ') ');
+      i += 3;
+    }
+  }
+  return out;
 }
 
 // "... Neptune Correct option: B. Jupiter" / "... (Answer: B)" at the end of an option or question line
@@ -326,6 +417,17 @@ function parseUnnumbered(lines) {
   };
   const optText = (o) => { const t = stripTrailingAnswer(o); if (t.ans && cur) cur.pendingAns = t.ans; return t.text; };
   for (const line of lines) {
+    const ch = findChain(line);
+    if (ch && ch[0].start > 0 && !optMatch(line)) {            // "stem A) x B) y C) z D) w" all on one line
+      push();
+      const before = line.slice(0, ch[0].start).trim();
+      const text = [...stem, before].join(' ').replace(/^(?:q(?:uestion)?\s*)?\d{1,4}\s*[.):]\s*/i, '').replace(/\s+/g, ' ').trim();
+      stem = [];
+      cur = { text, options: [], correct_index: null };
+      ch.forEach((c, i) => cur.options.push(optText(line.slice(c.end, ch[i + 1] ? ch[i + 1].start : line.length).trim())));
+      cur.lastOpt = true;
+      continue;
+    }
     const om = optMatch(line);
     if (om && om.letter === 'A' && (stem.length || (cur && cur.options.length >= 2))) {
       push();
@@ -349,6 +451,40 @@ function parseUnnumbered(lines) {
   return qs;
 }
 
+/** No A/B/C/D labels at all: a numbered question followed by exactly four option lines (bullets, tabs or plain lines). Used only as a last resort. */
+function parseUnlabeled(lines) {
+  const groups = [];
+  let g = null, expect = 1;
+  for (const line of lines) {
+    const q = qMatch(line);
+    if (q && q.no === expect) { g = { no: q.no, stem: q.text, rest: [], ended: false }; groups.push(g); expect = q.no + 1; continue; }
+    if (g) g.rest.push(line);
+  }
+  const qs = [];
+  for (const q of groups) {
+    let ans = null, skipping = false;
+    const body = [];
+    for (const l of q.rest) {
+      const am = ANS_RE.exec(l);
+      if (am) { ans = am[1].trim(); skipping = true; continue; }
+      if (EXPL_RE.test(l)) { skipping = true; continue; }
+      if (!skipping) body.push(l);
+    }
+    if (body.length < 4) continue;
+    const options = body.slice(-4);
+    const text = [q.stem, ...body.slice(0, -4)].join(' ').replace(/\s+/g, ' ').trim();
+    const item = { text, options, correct_index: null, no: q.no };
+    if (ans) { const i = answerIndex(ans, options); if (i !== null) item.correct_index = i; }
+    if (text) qs.push(item);
+  }
+  return qs.length >= 2 ? qs : [];
+}
+
+// A line that belongs to an answer-key TABLE: only question numbers, option letters and header words ("Q. No.", "Ans", "|" ...).
+// Descriptive sentences ("Reference key for the 50 A-level questions") are not key lines, so they can never produce a wrong answer.
+const KEY_WORDS = new Set(['q', 'no', 's', 'sl', 'sr', 'sno', 'qno', 'que', 'question', 'questions', 'ans', 'answer', 'answers', 'key', 'correct', 'option', 'to']);
+const keyish = (l) => { const t = l.split(/[\s,;|:()\[\]\-–—=.]+/).filter(Boolean); return t.length > 0 && t.every((x) => /^q?\d{1,4}$/i.test(x) || /^[A-Ha-h]$/.test(x) || KEY_WORDS.has(x.toLowerCase())); };
+
 /** Find an "Answer Key" block (with or without a heading) and cut it off the question lines. */
 function splitKey(lines) {
   for (let i = lines.length - 1; i > 0; i--) {
@@ -357,7 +493,13 @@ function splitKey(lines) {
     const plural = /^(answer\s*key|answers|ans\s*key|answer\s*sheet|solutions)$/i.test(m[1].trim());
     // a singular "Answer: B" line is only a key heading when what follows it is itself a list of "1-B" pairs
     if (!plural && !KEY_PAIRS.test(m[2])) continue;
-    const key = parseAnswerKey([m[2], ...lines.slice(i + 1)].join('\n'));
+    const after = [m[2], ...lines.slice(i + 1)];
+    let key = parseAnswerKey(after.filter((l) => l && keyish(l)).join('\n'));             // table lines only
+    if (Object.keys(key).length < 2) {                                                    // otherwise read everything after the heading,
+      const text = after.join('\n');                                                      // starting at the table's own header ("Q. No.") when there is one
+      const hdr = /(?:^|[\s|])(?:q\.?\s*no\.?|que\.?\s*no\.?|s\.?\s*no\.?|sl\.?\s*no\.?)(?=[\s|:.]|$)/i.exec(text);
+      key = parseAnswerKey(hdr && hdr.index > 0 ? text.slice(hdr.index) : text);
+    }
     const tail = lines.length - i - 1;
     const entries = Object.keys(key).length;
     if (entries >= 2 && (plural || !m[2] || entries >= 2) && (plural || tail < 6 || entries >= tail / 2)) return { lines: lines.slice(0, i), key };
@@ -376,15 +518,26 @@ function splitKey(lines) {
  */
 function parseQuestions(raw) {
   const warnings = [];
-  const all = stripNoise(normalise(raw));
-  const { lines, key } = splitKey(all);
+  // The answer key is cut off FIRST (before page numbers / repeated headers are removed), because in a key table the question
+  // numbers can sit alone on a line and would otherwise be thrown away as page numbers.
+  const all = normalise(raw).filter(Boolean);
+  const split = splitKey(all);
+  const key = split.key;
+  const lines = prepOptionRuns(explode(stripNoise(split.lines)));         // split runs-together lines into one line per question, unify option styles
 
+  // Read the paper in two independent ways and keep the better result:
+  //   numbered : question numbers mark where each question starts
+  //   by options : each run of options A, B, C, D is one question; its stem is the text just before it
+  // "Better" = more questions with a clean set of options, and no question that has swallowed the text of others.
+  const goodness = (qs) => qs.reduce((s, q) => s + (q.options.length === 4 ? 3 : q.options.length >= 2 ? 1 : 0)
+    - (q.text.length > 700 ? 3 : 0) - (q.options.some((o) => o.length > 400) ? 3 : 0), 0);
   let { questions, skippedNoOptions } = parseNumbered(lines);
-  const aStarts = lines.filter((l) => { const o = optMatch(l); return o && o.letter === 'A'; }).length;
   let usedUnnumbered = false;
-  if (questions.length === 0 || aStarts > questions.length * 1.5 + 2) {
-    const alt = parseUnnumbered(lines);
-    if (alt.length > questions.length) { questions = alt.map((q, i) => ({ ...q, no: i + 1 })); usedUnnumbered = true; }
+  const alt = parseUnnumbered(lines);
+  if (goodness(alt) > goodness(questions)) { questions = alt.map((q, i) => ({ ...q, no: i + 1 })); usedUnnumbered = true; }
+  if (!questions.length) {                                      // last resort: options without letters (bare numbers can be options here, so keep them)
+    const unl = parseUnlabeled(splitKey(normalise(raw).filter(Boolean)).lines);
+    if (unl.length) questions = unl;
   }
 
   // answer key block -> questions (by the printed question number when those are unique, else by position)
@@ -401,6 +554,10 @@ function parseQuestions(raw) {
   const multi = questions.filter((q) => q.multi).length;
   if (multi) warnings.push(`${multi} question(s) show more than one correct answer; only single-answer questions are supported — please choose the answer for them.`);
   if (skippedNoOptions) warnings.push(`${skippedNoOptions} numbered item(s) had no A/B/C/D options (written / short-answer questions) and were skipped.`);
+  const odd = questions.map((q, i) => ({ n: i + 1, c: q.options.length })).filter((x) => x.c !== 4);
+  if (odd.length) warnings.push(`${odd.length} question(s) do not have exactly 4 options: ${odd.slice(0, 10).map((x) => `Q${x.n} (${x.c})`).join(', ')}${odd.length > 10 ? ' …' : ''}. Please check them in the review table.`);
+  const long = questions.map((q, i) => ({ n: i + 1, q })).filter(({ q }) => q.text.length > 700 || q.options.some((o) => o.length > 400)).map((x) => x.n);
+  if (long.length) warnings.push(`Question ${long.slice(0, 6).join(', ')} looks unusually long — it may have run into the next question. Please check it.`);
 
   questions.forEach((q) => { q.options = q.options.slice(0, 8); if (q.correct_index != null && q.correct_index >= q.options.length) q.correct_index = null; delete q.inOption; delete q.skip; delete q.answered; delete q.expectAnswer; delete q.multi; delete q.no; });
   return { questions, warnings, stats: { lines: all.length, skippedNoOptions, keyEntries: keyCount, unnumbered: usedUnnumbered } };
