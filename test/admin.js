@@ -186,6 +186,18 @@ const wait = async (cond, ms = 12000) => { const t = Date.now(); while (Date.now
     assert.equal((await call(admin, 'GET', `/api/admin/exams/${eid}`)).data.exam.end_at, earlier);
     r = await call(admin, 'PUT', `/api/admin/exams/${eid}`, { end_at: new Date(Date.parse(cur.start_at) - 6e4).toISOString() });
     assert.equal(r.status, 400, 'but never before the opening time');
+    // the closing time must leave room for the whole exam: opening time + duration at the earliest
+    const floor = Date.parse(cur.start_at) + cur.duration_min * 60000;
+    r = await call(admin, 'PUT', `/api/admin/exams/${eid}`, { end_at: new Date(floor - 60000).toISOString() });
+    assert.equal(r.status, 400); assert.match(r.data.error, /opening time plus the duration/);
+    r = await call(admin, 'PUT', `/api/admin/exams/${eid}`, { end_at: new Date(floor).toISOString() });
+    assert.equal(r.status, 200, 'exactly opening time + duration is allowed');
+    const mk = async (endMs) => call(admin, 'POST', '/api/admin/exams', { name: 'Window', duration_min: 60, pass_percent: 40, start_at: new Date(now + 36e5).toISOString(), end_at: new Date(endMs).toISOString() });
+    r = await mk(now + 36e5 + 59 * 60000);
+    assert.equal(r.status, 400, 'creating an exam whose window is shorter than its duration is refused');
+    r = await mk(now + 36e5 + 60 * 60000);
+    assert.equal(r.status, 200, 'a window exactly as long as the duration is fine');
+    await call(admin, 'DELETE', `/api/admin/exams/${r.data.id}`, { password: 'Adm1nPass!' });
     r = await call(admin, 'PUT', `/api/admin/exams/${eid}`, { end_at: later });
     assert.equal(r.status, 200, JSON.stringify(r.data));
     assert.equal((await call(admin, 'GET', `/api/admin/exams/${eid}`)).data.exam.end_at, later, 'closing time extended');

@@ -35,6 +35,14 @@ router.get('/stats', async (req, res) => {
 });
 
 /* -------------------------------- exams -------------------------------- */
+/** The closing time must leave room for the whole exam: it can never be earlier than the opening time + the duration. */
+function windowError(m) {
+  const start = Date.parse(m.start_at), end = Date.parse(m.end_at), need = start + Number(m.duration_min) * 60000;
+  if (end <= start) return 'Closing time must be after opening time.';
+  if (end < need) return 'Closing time must be at least the opening time plus the duration (' + m.duration_min + ' min), so it cannot be earlier than ' + new Date(need).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' IST.';
+  return null;
+}
+
 function examBody(b, partial = false) {
   const out = {};
   const optional = ['negative_marks', 'default_marks'];
@@ -87,7 +95,7 @@ router.get('/exams', async (req, res) => {
 
 router.post('/exams', async (req, res) => {
   let b; try { b = examBody(req.body || {}); } catch (e) { return bad(res, e.message); }
-  if (Date.parse(b.end_at) <= Date.parse(b.start_at)) return bad(res, 'Closing time must be after opening time.');
+  { const w = windowError({ duration_min: 0, ...b }); if (w) return bad(res, w); }
   const info = await db.prepare(`INSERT INTO exams (name,instructions,duration_min,pass_percent,negative_marks,default_marks,start_at,end_at,questions_per_attempt,num_sets,link_base)
     VALUES (@name,@instructions,@duration_min,@pass_percent,@negative_marks,@default_marks,@start_at,@end_at,@questions_per_attempt,@num_sets,@link_base)`)
     .run({ instructions: '', negative_marks: 0, default_marks: 1, questions_per_attempt: null, num_sets: 1, ...b, link_base: baseUrl(req) });
@@ -119,7 +127,7 @@ router.put('/exams/:id', async (req, res) => {
   const e = await loadExam(req, res); if (!e) return;
   let b; try { b = examBody(req.body || {}, true); } catch (err) { return bad(res, err.message); }
   const m = { ...e, ...b };
-  if (Date.parse(m.end_at) <= Date.parse(m.start_at)) return bad(res, 'Closing time must be after opening time.');
+  { const w = windowError(m); if (w) return bad(res, w); }
   if (e.published) {
     // Once published, the only change allowed is the closing time (later or earlier; it must still be after the opening time).
     const touched = Object.keys(b).filter((k) => k !== 'end_at' && String(b[k] ?? '') !== String(e[k] ?? ''));

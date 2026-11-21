@@ -82,11 +82,22 @@ function examFormHTML(e) {
       <div class="hint">Sets are built automatically from the bank.</div></div></div>
     <div class="grid g2">
       <div class="field"><label class="f">Opens at *</label><input type="datetime-local" name="start_at" required value="${toLocalInput(start)}"></div>
-      <div class="field"><label class="f">Closes at *</label><input type="datetime-local" name="end_at" required value="${toLocalInput(end)}"><div class="hint">Candidates can start only between these times.</div></div>
+      <div class="field"><label class="f">Closes at *</label><input type="datetime-local" name="end_at" required value="${toLocalInput(end)}"><div class="hint">Candidates can start only between these times. Must be at least the opening time plus the duration.</div></div>
     </div>
     <div class="field"><label class="f">Instructions from Administration (optional)</label><textarea name="instructions" rows="4" placeholder="One point per line">${esc(e?.instructions || '')}</textarea><div class="hint">Shown to candidates after the standard instructions.</div></div>
     <button class="btn primary">${e ? 'Save changes' : 'Create exam & add questions →'}</button>
   </form>`;
+}
+/** The earliest closing time that still lets the whole exam be taken: opening time + duration (as a datetime-local value). */
+const earliestClose = (startIso, durationMin) => toLocalInput(new Date(Date.parse(startIso) + Number(durationMin) * 60000).toISOString());
+/** Keep the "Closes at" picker's minimum equal to opening time + duration while the admin edits either of them. */
+function wireClosing(form) {
+  const upd = () => {
+    const s = form.elements.start_at.value, d = form.elements.duration_min.value;
+    if (s && d) form.elements.end_at.min = earliestClose(fromLocalInput(s), d);
+  };
+  ['start_at', 'duration_min'].forEach((n) => form.elements[n].addEventListener('input', upd));
+  upd();
 }
 function readExamForm(form) {
   const f = Object.fromEntries(new FormData(form));
@@ -96,6 +107,7 @@ function readExamForm(form) {
 }
 async function adminExamForm() {
   const main = shell('exams', `<p><a href="#/admin">← All exams</a></p><h1>Create exam</h1><div class="card">${examFormHTML()}</div>`);
+  wireClosing($('#ef', main));
   $('#ef', main).onsubmit = async (ev) => {
     ev.preventDefault();
     try { const r = await api('POST', '/api/admin/exams', readExamForm(ev.target)); toast('Exam created. Now add the questions.', 'ok'); location.hash = `#/admin/exam/${r.id}/questions`; } catch (e) { fail(e); }
@@ -140,7 +152,7 @@ async function adminExam(id, tab) {
         <p class="small mute" style="margin:12px 0 0">This exam is published, so these settings are locked. You can only change the closing time.</p>
       </div>
       <div class="card"><form id="ef">
-        <div class="field" style="max-width:320px"><label class="f">Closing time</label><input type="datetime-local" name="end_at" required value="${toLocalInput(exam.end_at)}"><div class="hint">Any date after the opening time (${fmtDT(exam.start_at)}). Candidates already writing keep their own deadline.</div></div>
+        <div class="field" style="max-width:320px"><label class="f">Closing time</label><input type="datetime-local" name="end_at" required value="${toLocalInput(exam.end_at)}" min="${earliestClose(exam.start_at, exam.duration_min)}"><div class="hint">Any date from ${fmtDT(new Date(Date.parse(exam.start_at) + exam.duration_min * 60000).toISOString())} onwards (opening time + ${dur(exam.duration_min)} duration). Earlier or later than now, as you wish. Candidates already writing keep their own deadline.</div></div>
         <button class="btn primary">Save closing time</button>
       </form></div>`;
       $('#ef', box).onsubmit = async (ev) => {
@@ -154,6 +166,7 @@ async function adminExam(id, tab) {
       };
     } else {
       box.innerHTML = `<div class="card">${examFormHTML(exam)}</div>`;
+      wireClosing($('#ef', box));
       $('#ef', box).onsubmit = async (ev) => {
         ev.preventDefault();
         try { await api('PUT', `/api/admin/exams/${id}`, readExamForm(ev.target)); toast('Saved', 'ok'); adminExam(id, 'settings'); } catch (e) { fail(e); }
