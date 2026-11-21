@@ -180,8 +180,12 @@ const wait = async (cond, ms = 12000) => { const t = Date.now(); while (Date.now
     assert.equal(r.status, 409, 'questions per candidate is locked once published');
     r = await call(admin, 'PUT', `/api/admin/exams/${eid}`, { num_sets: 3 });
     assert.equal(r.status, 409, 'number of sets is locked once published');
-    r = await call(admin, 'PUT', `/api/admin/exams/${eid}`, { end_at: new Date(Date.parse(cur.end_at) - 6e4).toISOString() });
-    assert.equal(r.status, 409, 'closing time cannot be brought forward');
+    const earlier = new Date(Date.parse(cur.end_at) - 6e4).toISOString();
+    r = await call(admin, 'PUT', `/api/admin/exams/${eid}`, { end_at: earlier });
+    assert.equal(r.status, 200, 'the closing time can also be moved to an earlier date');
+    assert.equal((await call(admin, 'GET', `/api/admin/exams/${eid}`)).data.exam.end_at, earlier);
+    r = await call(admin, 'PUT', `/api/admin/exams/${eid}`, { end_at: new Date(Date.parse(cur.start_at) - 6e4).toISOString() });
+    assert.equal(r.status, 400, 'but never before the opening time');
     r = await call(admin, 'PUT', `/api/admin/exams/${eid}`, { end_at: later });
     assert.equal(r.status, 200, JSON.stringify(r.data));
     assert.equal((await call(admin, 'GET', `/api/admin/exams/${eid}`)).data.exam.end_at, later, 'closing time extended');

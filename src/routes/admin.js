@@ -121,10 +121,9 @@ router.put('/exams/:id', async (req, res) => {
   const m = { ...e, ...b };
   if (Date.parse(m.end_at) <= Date.parse(m.start_at)) return bad(res, 'Closing time must be after opening time.');
   if (e.published) {
-    // Once published, the only change allowed is to extend the closing time.
+    // Once published, the only change allowed is the closing time (later or earlier; it must still be after the opening time).
     const touched = Object.keys(b).filter((k) => k !== 'end_at' && String(b[k] ?? '') !== String(e[k] ?? ''));
-    if (touched.length) return bad(res, 'This exam is published, so only its closing time can be changed (extended). Everything else is locked.', 409);
-    if (b.end_at !== undefined && Date.parse(b.end_at) < Date.parse(e.end_at)) return bad(res, 'The closing time can only be extended, not brought forward.', 409);
+    if (touched.length) return bad(res, 'This exam is published, so only its closing time can be changed. Everything else is locked.', 409);
   }
   const started = await hasAttempts(e.id);
   if (started && (b.negative_marks !== undefined && b.negative_marks !== e.negative_marks))

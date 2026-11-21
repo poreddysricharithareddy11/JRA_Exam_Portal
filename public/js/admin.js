@@ -137,16 +137,18 @@ async function adminExam(id, tab) {
           ${row('Opens', fmtDT(exam.start_at))}
           ${row('Closes', fmtDT(exam.end_at))}
         </div>
-        <p class="small mute" style="margin:12px 0 0">This exam is published, so these settings are locked. You can only extend the closing time.</p>
+        <p class="small mute" style="margin:12px 0 0">This exam is published, so these settings are locked. You can only change the closing time.</p>
       </div>
       <div class="card"><form id="ef">
-        <div class="field" style="max-width:320px"><label class="f">Extend closing time</label><input type="datetime-local" name="end_at" required value="${toLocalInput(exam.end_at)}" min="${toLocalInput(exam.end_at)}"></div>
-        <button class="btn primary">Save new closing time</button>
+        <div class="field" style="max-width:320px"><label class="f">Closing time</label><input type="datetime-local" name="end_at" required value="${toLocalInput(exam.end_at)}"><div class="hint">Any date after the opening time (${fmtDT(exam.start_at)}). Candidates already writing keep their own deadline.</div></div>
+        <button class="btn primary">Save closing time</button>
       </form></div>`;
       $('#ef', box).onsubmit = async (ev) => {
         ev.preventDefault();
         try {
-          await api('PUT', `/api/admin/exams/${id}`, { end_at: fromLocalInput(ev.target.elements.end_at.value) });
+          const end = fromLocalInput(ev.target.elements.end_at.value);
+          if (Date.parse(end) < Date.now() && !await confirmBox('This closing time is already in the past, so the exam will be closed to new candidates straight away. Continue?', 'Save', false)) return;
+          await api('PUT', `/api/admin/exams/${id}`, { end_at: end });
           toast('Closing time updated', 'ok'); adminExam(id, 'settings');
         } catch (e) { fail(e); }
       };
