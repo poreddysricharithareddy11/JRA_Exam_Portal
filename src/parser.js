@@ -244,6 +244,7 @@ function stripHeadingMerges(lines) {
 }
 
 function dropHeadings(lines) {
+  let prevDropped = false;   // was the previous line a heading that we removed? (then an ALL-CAPS line right after it is the heading's second line)
   let blockDone = true;      // are we between two question blocks? (true after the last option D / an answer line, also across wrapped option text)
   const decide = (l, i) => {
     if (!l || qMatch(l) || optMatch(l) || ANS_RE.test(l) || EXPL_RE.test(l)) return true;
@@ -254,6 +255,10 @@ function dropHeadings(lines) {
     if (pa && !pa[1].trim()) return true;                                  // "Answer:" with the value on this line
     const nextOpt = next && optMatch(next);
     const words = l.split(/\s+/).length;
+    // a heading that wraps onto a second line: "SECTION B: ... HARDWARE, SETUP &"  /  "CALIBRATION (Q19 – Q32)"
+    const capsOnly = !/[a-z]/.test(l) && /[A-Z]{3}/.test(l);
+    const headRange = /^[^a-z]*[(\[]\s*(?:Q|QUESTIONS?|Questions?)\s*\.?\s*\d+\s*(?:–|-|—|to|TO)\s*(?:Q\.?\s*)?\d+\s*[)\]]\s*$/.test(l);   // ALL-CAPS words + "(Q19 – Q32)"
+    if (headRange || (prevDropped && capsOnly && words <= 14)) return false;
     if (words <= 14 && !(nextOpt && nextOpt.letter === 'A') && (SECTION_KW.test(l) || RANGE_LINE.test(l) || INSTRUCTION_LINE.test(l))) return false;
     // a short stand-alone line between two question blocks: "FUNDAMENTALS OF SURVEYING", "Levelling and Contouring"
     const endsBlock = i === 0 || blockDone;
@@ -270,7 +275,7 @@ function dropHeadings(lines) {
     if (qMatch(l)) blockDone = !!findChain(l);
     else { const o = optMatch(l); if (o) blockDone = !!(findChain(l) || o.letter >= 'D'); else if (ANS_RE.test(l) || EXPL_RE.test(l)) blockDone = true; }
   };
-  return lines.filter((l, i) => { const keep = decide(l, i); if (keep) track(l); return keep; });
+  return lines.filter((l, i) => { const keep = decide(l, i); if (keep) track(l); prevDropped = !keep; return keep; });
 }
 
 /** Split "A) x B) y C) z" (on one line) into options, keeping letter order. */
@@ -463,7 +468,9 @@ function parseNumbered(lines) {
       }
     }
 
-    const om = optMatch(line);
+    // "d None of above" (the dot after the letter is missing): accepted only as exactly the NEXT expected option C or D of a question that already has two
+    const loose = cur && !cur.skip && cur.options.length >= 2 && cur.options.length < 4 ? /^([A-Da-d])\s+(\S.*)$/.exec(line) : null;
+    const om = optMatch(line) || (loose && loose[1].toUpperCase() === LETTERS[cur.options.length] ? { letter: loose[1].toUpperCase(), text: loose[2].trim() } : null);
     if (cur && !cur.skip && om && om.letter === LETTERS[cur.options.length] && (cur.options.length > 0 || om.letter === 'A')) {
       addOptions(om.letter, om.text);
       continue;

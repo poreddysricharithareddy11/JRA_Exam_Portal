@@ -24,7 +24,7 @@ app.use(express.json({ limit: '8mb' }));
 app.use(cookieParser());
 
 // Used by the host's health check and by the uptime pinger (the DB query also keeps the free database awake).
-app.get('/healthz', async (req, res) => { await db.prepare('SELECT 1').get(); res.json({ ok: true, db: db.kind }); });
+app.get('/healthz', async (req, res) => { await db.prepare('SELECT 1').get(); res.json({ ok: true, db: db.kind, commit: (process.env.RENDER_GIT_COMMIT || '').slice(0, 7) || undefined }); });
 app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
