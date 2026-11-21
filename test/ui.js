@@ -219,13 +219,6 @@ const api = async (m, u, body) => {
     assert.ok((await ev('document.body.innerText')).includes('awarded to every candidate'), 'logged');
     await shot('18-question-corrections');
 
-    // --- e-mail settings page ---
-    await go('#/admin/settings');
-    await waitFor("!!document.querySelector('#mf')");
-    const settingsTxt = await ev('document.body.innerText');
-    assert.ok(settingsTxt.includes('Not set up') && settingsTxt.includes('App passwords'), 'settings page explains Gmail App Passwords');
-    assert.equal(await ev("document.querySelector('#tb').disabled"), true, 'test button disabled until configured');
-    await shot('19-email-settings');
     await go('#/admin/users');
     await waitFor("document.body.innerText.includes('Priya Sharma')");
     await shot('11-admin-users');

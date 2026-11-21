@@ -9,6 +9,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 // JWT secret: from env, else generated once and persisted so sessions survive restarts.
 function loadSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  if (process.env.NODE_ENV === 'production') console.warn('[config] JWT_SECRET is not set: sign-ins will be lost whenever the server restarts. Set it in the hosting environment.');
   const f = path.join(DATA_DIR, '.jwt_secret');
   try { return fs.readFileSync(f, 'utf8').trim(); } catch (_) {}
   const s = crypto.randomBytes(48).toString('hex');

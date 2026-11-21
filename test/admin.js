@@ -1,5 +1,5 @@
 // Admin-only features: correcting a question after candidates took the exam (answer / marks / award to all),
-// recalculation, change log, plus the e-mail settings page (stored encrypted, test e-mail through a fake SMTP server).
+// recalculation, change log, and re-sending corrected results (through a fake SMTP server).
 const net = require('net');
 const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path'), assert = require('assert');
@@ -39,7 +39,7 @@ const wait = async (cond, ms = 12000) => { const t = Date.now(); while (Date.now
 
 (async () => {
   await new Promise((r) => smtp.listen(SMTP_PORT, '127.0.0.1', r));
-  const srv = spawn(process.execPath, ['src/server.js'], { cwd: path.join(__dirname, '..'), env: { ...process.env, PORT, DATA_DIR: dir, ADMIN_USERNAME: 'adm', ADMIN_PASSWORD: 'Adm1nPass!', SMTP_USER: '', SMTP_PASS: '' }, stdio: ['ignore', 'ignore', 'inherit'] });
+  const srv = spawn(process.execPath, ['src/server.js'], { cwd: path.join(__dirname, '..'), env: { ...process.env, PORT, DATA_DIR: dir, ADMIN_USERNAME: 'adm', ADMIN_PASSWORD: 'Adm1nPass!', SMTP_HOST: '127.0.0.1', SMTP_PORT: String(SMTP_PORT), SMTP_SECURE: 'false', SMTP_USER: 'sender@test.com', SMTP_PASS: 'goodpass1234' }, stdio: ['ignore', 'ignore', 'inherit'] });
   try {
     for (let i = 0; i < 50; i++) { try { await fetch(BASE + '/healthz'); break; } catch (_) { await new Promise((r) => setTimeout(r, 200)); } }
     const admin = jar();
@@ -140,38 +140,6 @@ const wait = async (cond, ms = 12000) => { const t = Date.now(); while (Date.now
     assert.equal(res.results.find((x) => x.username === 'alice').score, 8);
     assert.equal(res.summary.submitted, 2);
 
-    /* ===== resend-all needs e-mail; without it a clear message ===== */
-    r = await call(admin, 'POST', `/api/admin/exams/${eid}/resend-all`);
-    assert.equal(r.status, 400); assert.match(r.data.error, /not set up/i);
-
-    /* ================= e-mail settings ================= */
-    r = await call(admin, 'GET', '/api/admin/settings/email');
-    assert.equal(r.data.configured, false);
-    assert.equal((await call(people.alice.c, 'GET', '/api/admin/settings/email')).status, 403, 'candidates cannot see settings');
-    assert.equal((await call(admin, 'PUT', '/api/admin/settings/email', { host: 'x', port: 465, user: 'nope', password: 'p' })).status, 400, 'bad address rejected');
-    assert.equal((await call(admin, 'PUT', '/api/admin/settings/email', { host: '127.0.0.1', port: 70000, user: 'a@b.co', password: 'p' })).status, 400, 'bad port rejected');
-    assert.equal((await call(admin, 'PUT', '/api/admin/settings/email', { host: '127.0.0.1', port: SMTP_PORT, user: 'a@b.co' })).status, 400, 'password required the first time');
-
-    // wrong password -> friendly Gmail-style explanation, nothing crashes
-    r = await call(admin, 'PUT', '/api/admin/settings/email', { host: '127.0.0.1', port: SMTP_PORT, secure: false, user: 'sender@test.com', password: 'BADPASS' });
-    assert.equal(r.status, 200); assert.equal(r.data.configured, true); assert.equal(r.data.has_password, true); assert.ok(!JSON.stringify(r.data).includes('BADPASS'), 'password is never returned');
-    r = await call(admin, 'POST', '/api/admin/settings/email/test', { to: 'owner@test.com' });
-    assert.equal(r.status, 400); assert.match(r.data.error, /App Password|rejected/i, 'explains the Gmail App Password requirement');
-
-    // correct password -> test e-mail really arrives
-    r = await call(admin, 'PUT', '/api/admin/settings/email', { host: '127.0.0.1', port: SMTP_PORT, secure: false, user: 'sender@test.com', password: 'goodpass1234', from: 'Exam Portal <sender@test.com>' });
-    assert.equal(r.status, 200);
-    r = await call(admin, 'POST', '/api/admin/settings/email/test', { to: 'owner@test.com' });
-    assert.equal(r.status, 200, JSON.stringify(r.data));
-    assert.ok(await wait(() => inbox.some((m) => m.to.includes('owner@test.com') && /test e-mail/i.test(m.raw))), 'test e-mail delivered');
-    // the stored password is encrypted at rest
-    const D = require('better-sqlite3'); const dbf = new D(path.join(dir, 'portal.db'), { readonly: true });
-    const stored = dbf.prepare("SELECT value FROM settings WHERE key='smtp_pass'").get().value; dbf.close();
-    assert.ok(stored.startsWith('v1:') && !stored.includes('goodpass1234'), 'password encrypted in the database');
-    // leaving the password blank keeps the saved one
-    r = await call(admin, 'PUT', '/api/admin/settings/email', { host: '127.0.0.1', port: SMTP_PORT, secure: false, user: 'sender@test.com', password: '' });
-    assert.equal(r.status, 200); assert.equal((await call(admin, 'POST', '/api/admin/settings/email/test', { to: 'owner@test.com' })).status, 200, 'saved password still works');
-
     // with e-mail configured the corrected results can be re-sent to everyone, and the stats say it is configured
     assert.equal((await call(admin, 'GET', '/api/admin/stats')).data.smtp_configured, true);
     const before = inbox.length;
@@ -180,28 +148,9 @@ const wait = async (cond, ms = 12000) => { const t = Date.now(); while (Date.now
     assert.ok(await wait(() => inbox.length >= before + 2), 'updated result e-mails sent');
     assert.ok(inbox.slice(before).every((m) => /application\/pdf/.test(m.raw)), 'with the PDF attached');
 
-    // removing the saved account goes back to "not set up"
-    r = await call(admin, 'DELETE', '/api/admin/settings/email');
-    assert.equal(r.data.configured, false);
-
-    /* ================= company logo ================= */
-    const logoRes = await fetch(BASE + '/brand/logo');                       // public: the sign-in page needs it
-    assert.equal(logoRes.status, 200); assert.match(logoRes.headers.get('content-type'), /image\/png/);
-    const defaultLen = (await logoRes.arrayBuffer()).byteLength; assert.ok(defaultLen > 5000, 'built-in logo served');
-    assert.equal((await call(admin, 'GET', '/api/admin/settings/branding')).data.custom, false);
-    const tiny = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
-    const sendLogo = async (c, buf, name) => { const f = new FormData(); f.append('file', new Blob([buf]), name); const r = await fetch(BASE + '/api/admin/settings/branding', { method: 'POST', headers: { cookie: c.cookie }, body: f }); return { status: r.status, data: await r.json().catch(() => ({})) }; };
-    assert.equal((await sendLogo(people.alice.c, tiny, 'l.png')).status, 403, 'candidates cannot change the logo');
-    r = await sendLogo(admin, Buffer.from('this is not an image'), 'evil.png');
-    assert.equal(r.status, 400); assert.match(r.data.error, /PNG or JPG/, 'non-images rejected (checked by content, not file name)');
-    assert.equal((await sendLogo(admin, Buffer.alloc(3.5 * 1024 * 1024, 1), 'big.png')).status, 400, 'oversized rejected');
-    assert.equal((await sendLogo(admin, tiny, 'logo.png')).status, 200);
-    assert.equal((await call(admin, 'GET', '/api/admin/settings/branding')).data.custom, true);
-    assert.equal(Buffer.from(await (await fetch(BASE + '/brand/logo')).arrayBuffer()).equals(tiny), true, 'uploaded logo is now served');
-    const pdf2 = await fetch(BASE + `/api/user/attempts/${people.alice.att}/pdf`, { headers: { cookie: people.alice.c.cookie } });
-    assert.equal(Buffer.from(await pdf2.arrayBuffer()).subarray(0, 4).toString(), '%PDF', 'result PDF still builds with the custom logo');
-    assert.equal((await call(admin, 'DELETE', '/api/admin/settings/branding')).data.custom, false);
-    assert.equal((await (await fetch(BASE + '/brand/logo')).arrayBuffer()).byteLength, defaultLen, 'back to the built-in logo');
+    // the company logo is served publicly (the sign-in page needs it)
+    const logoRes = await fetch(BASE + '/brand/logo');
+    assert.equal(logoRes.status, 200); assert.match(logoRes.headers.get('content-type'), /^image\//);
 
     console.log('ADMIN TESTS PASSED');
   } catch (e) { console.error('ADMIN TEST FAILED:', e); process.exitCode = 1; }

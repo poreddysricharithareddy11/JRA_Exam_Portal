@@ -7,7 +7,7 @@ async function call(cookie, method, url, body) {
   return { r, data: await r.json().catch(() => ({})) };
 }
 (async () => {
-  const a = await call('', 'POST', '/api/auth/login', { username: 'jayarama_exam', password: process.env.ADMIN_PASSWORD || 'Jayarama@123', role: 'admin' });
+  const a = await call('', 'POST', '/api/auth/login', { username: 'jayarama_exam', password: process.env.ADMIN_PASSWORD || 'Smoke-Test-Pw1', role: 'admin' });
   const ac = a.r.headers.get('set-cookie').split(';')[0];
   const users = Array.from({ length: N }, (_, i) => ({ username: `load${i}`, password: 'secret1', email: `load${i}@example.com` }));
   await call(ac, 'POST', '/api/admin/users/bulk', { users });

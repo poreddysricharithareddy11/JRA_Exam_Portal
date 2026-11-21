@@ -23,7 +23,8 @@ app.use(compression());
 app.use(express.json({ limit: '8mb' }));
 app.use(cookieParser());
 
-app.get('/healthz', (req, res) => { db.prepare('SELECT 1').get(); res.json({ ok: true }); });
+// Used by the host's health check and by the uptime pinger (the DB query also keeps the free database awake).
+app.get('/healthz', async (req, res) => { await db.prepare('SELECT 1').get(); res.json({ ok: true, db: db.kind }); });
 app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
@@ -55,20 +56,24 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message && /Unsupported|corrupt|Invalid PDF|zip/i.test(err.message) ? `Could not read the file: ${err.message}` : 'Something went wrong. Please try again.' });
 });
 
-const server = app.listen(cfg.PORT, () => {
-  console.log(`${cfg.PORTAL_NAME} listening on http://localhost:${cfg.PORT}`);
-  if (!mailer.configured()) console.warn('[mail] SMTP_USER / SMTP_PASS not set — result e-mails will not be sent.');
+let server, t1, t2;
+db.ready.then(() => {
+  server = app.listen(cfg.PORT, () => {
+    console.log(`${cfg.PORTAL_NAME} listening on http://localhost:${cfg.PORT} (database: ${db.kind}, e-mail: ${mailer.provider()})`);
+    if (!mailer.configured()) console.warn('[mail] No mail provider configured (BREVO_API_KEY / RESEND_API_KEY / SMTP_USER+SMTP_PASS) — result e-mails will not be sent.');
+  });
+  // Background jobs: auto-submit expired attempts; retry pending e-mails.
+  const sweep = () => svc.sweepExpired().catch((e) => console.error('[sweep]', e.message));
+  const retry = () => mailer.retryPending().catch((e) => console.error('[mail]', e.message));
+  sweep(); retry();
+  t1 = setInterval(sweep, 10000);
+  t2 = setInterval(retry, 5 * 60000);
 });
-
-// Background jobs: auto-submit expired attempts; retry pending e-mails.
-svc.sweepExpired();
-mailer.retryPending();
-const t1 = setInterval(() => { try { svc.sweepExpired(); } catch (e) { console.error('[sweep]', e); } }, 10000);
-const t2 = setInterval(() => { try { mailer.retryPending(); } catch (e) { console.error('[mail]', e); } }, 5 * 60000);
 
 function shutdown() {
   clearInterval(t1); clearInterval(t2);
-  server.close(() => { try { db.close(); } catch (_) {} process.exit(0); });
+  const done = () => Promise.resolve(db.close()).catch(() => {}).finally(() => process.exit(0));
+  if (server) server.close(done); else done();
   setTimeout(() => process.exit(0), 5000).unref();
 }
 process.on('SIGTERM', shutdown);

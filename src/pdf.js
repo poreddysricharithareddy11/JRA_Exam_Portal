@@ -8,9 +8,9 @@ const GREEN = '#15803d', RED = '#b91c1c', INK = '#111827', MUTE = '#6b7280';
 function fmt(d) { return d ? new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST' : '-'; }
 
 /** Builds the result PDF for a submitted attempt and resolves to a Buffer. */
-function buildResultPdf(attemptId) {
-  const data = review(attemptId);
-  if (!data) return Promise.reject(new Error('Attempt not found'));
+async function buildResultPdf(attemptId, preloaded) {
+  const data = preloaded || await review(attemptId);
+  if (!data) throw new Error('Attempt not found');
   const { attempt: a, questions } = data;
 
   return new Promise((resolve, reject) => {

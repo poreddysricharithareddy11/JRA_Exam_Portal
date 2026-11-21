@@ -10,11 +10,10 @@
     "test:ui": "node test/ui.js && node test/exam.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
-    "better-sqlite3": "13.2.0",
     "compression": "1.8.2",
     "cookie-parser": "1.4.7",
     "dotenv": "18.0.10",
@@ -27,7 +26,11 @@
     "nodemailer": "10.6.1",
     "pdfjs-dist": "^6.5.438",
     "pdfkit": "0.21.0",
+    "pg": "8.23.1",
     "tesseract.js": "^7.0.0",
     "word-extractor": "1.0.4"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "13.2.0"
   }
 }

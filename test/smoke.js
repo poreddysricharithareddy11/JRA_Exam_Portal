@@ -41,7 +41,7 @@ Answer Key
 (async () => {
   const srv = spawn(process.execPath, ['src/server.js'], {
     cwd: path.join(__dirname, '..'),
-    env: { ...process.env, PORT, DATA_DIR: dir, ADMIN_USERNAME: 'jayarama_exam', ADMIN_PASSWORD: 'Jayarama@123', SMTP_USER: '', SMTP_PASS: '' },
+    env: { ...process.env, PORT, DATA_DIR: dir, ADMIN_USERNAME: 'jayarama_exam', ADMIN_PASSWORD: 'Smoke-Test-Pw1', SMTP_USER: '', SMTP_PASS: '' },
     stdio: ['ignore', 'inherit', 'inherit'],
   });
   try {
@@ -50,9 +50,9 @@ Answer Key
     const admin = client();
     let r = await admin('POST', '/api/auth/login', { username: 'jayarama_exam', password: 'wrong', role: 'admin' });
     assert.equal(r.status, 401, 'bad password rejected');
-    r = await admin('POST', '/api/auth/login', { username: 'jayarama_exam', password: 'Jayarama@123', role: 'user' });
+    r = await admin('POST', '/api/auth/login', { username: 'jayarama_exam', password: 'Smoke-Test-Pw1', role: 'user' });
     assert.equal(r.status, 401, 'admin cannot log in on the candidate tab');
-    r = await admin('POST', '/api/auth/login', { username: 'jayarama_exam', password: 'Jayarama@123', role: 'admin' });
+    r = await admin('POST', '/api/auth/login', { username: 'jayarama_exam', password: 'Smoke-Test-Pw1', role: 'admin' });
     assert.equal(r.status, 200, 'admin login');
 
     // users
@@ -99,7 +99,7 @@ Answer Key
     assert.equal(r.data.exams.length, 1);
     assert.equal((await s1('GET', '/api/user/reports')).data.reports.length, 0, 'no reports yet');
     r = await s1('POST', `/api/user/exams/${eid}/start`);
-    assert.equal(r.status, 200); const att = r.data.attempt.id;
+    assert.equal(r.status, 200, JSON.stringify(r.data)); const att = r.data.attempt.id;
     assert.ok(!JSON.stringify(r.data.questions).includes('correct_index'), 'key not leaked to candidate');
     const qs = r.data.questions;
     assert.equal(qs.length, 5, 'both sets are merged into one pool of 5');

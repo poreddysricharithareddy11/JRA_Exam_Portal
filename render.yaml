@@ -1,0 +1,35 @@
+# Free-plan setup: web app on Render (free) + data in a free Neon Postgres (DATABASE_URL) + e-mail via Brevo's HTTPS API.
+services:
+  - type: web
+    name: jayarama-exam-portal
+    runtime: node
+    plan: free
+    autoDeploy: true
+    buildCommand: npm ci --omit=dev --omit=optional
+    startCommand: node src/server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+      - key: NODE_ENV
+        value: production
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL        # Neon connection string
+        sync: false
+      - key: PUBLIC_URL          # e.g. https://jayarama-exam-portal.onrender.com
+        sync: false
+      - key: ADMIN_USERNAME
+        value: jayarama_exam
+      - key: ADMIN_PASSWORD      # used once, to create the admin account on first start
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: BREVO_API_KEY       # Brevo > SMTP & API > API keys
+        sync: false
+      - key: MAIL_FROM           # a sender verified in Brevo, e.g. Jayarama Exam Portal <you@gmail.com>
+        sync: false
