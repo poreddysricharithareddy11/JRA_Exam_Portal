@@ -119,7 +119,7 @@ const api = async (m, u, body) => {
     assert.equal(await inFullscreen(), true, 'back in full-screen after the warning');
     assert.match(await ev("document.querySelector('#viol').textContent"), /Warnings: 1\/1/);
     // the answers survive: reload the paper from the server and see both saved
-    const saved = await ev(`fetch('/api/user/exams/${eid}/start',{method:'POST'}).then(r=>r.json()).then(d=>Object.values(d.answers).filter(v=>v!==null).length)`);
+    const saved = await ev(`fetch('/api/user/exams/${eid}/start',{method:'POST',headers:authHeaders()}).then(r=>r.json()).then(d=>Object.values(d.answers).filter(v=>v!==null).length)`);
     assert.equal(saved, 2, 'both answers were saved on the server as they were chosen');
 
     // violation 2: auto-submit with the saved answers

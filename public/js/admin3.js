@@ -14,7 +14,7 @@ function questionsTab(box, id, d) {
   let filter = 'all', search = '';
   let open = !published && missing > 0;     // the list stays hidden until the admin asks for it (or answers are missing)
   const info = pool ? `<span class="chip">${pool} question${pool === 1 ? '' : 's'}</span> <span class="mute small">${exam.num_sets} set${exam.num_sets === 1 ? '' : 's'} × ${per}</span>${graceCount ? ` <span class="chip" style="background:var(--warn-l);color:var(--warn)">${graceCount} awarded to all</span>` : ''}` : '';
-  const pdfBtn = (primary) => (pool ? `<a class="btn ${primary ? 'primary' : ''}" href="/api/admin/exams/${id}/questions.pdf">⬇ Download PDF</a>` : '');
+  const pdfBtn = (primary) => (pool ? `<a class="btn ${primary ? 'primary' : ''}" href="#" data-dl="/api/admin/exams/${id}/questions.pdf" data-name="question-bank.pdf">⬇ Download PDF</a>` : '');
 
   box.innerHTML = published ? `
     <div class="card">

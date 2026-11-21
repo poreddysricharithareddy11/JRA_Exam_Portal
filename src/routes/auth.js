@@ -19,8 +19,11 @@ router.post('/login', loginLimiter, async (req, res) => {
   const u = await db.prepare('SELECT * FROM users WHERE lower(username)=lower(?)').get(String(username).trim());
   const ok = await pw.verify(password, u ? u.password_hash : pw.DUMMY);
   if (!u || !ok || (role && u.role !== role)) return res.status(401).json({ error: 'Invalid username or password.' });
+  const user = { id: u.id, username: u.username, full_name: u.full_name, email: u.email, role: u.role };
+  // Browser app (bearer: true): the sign-in goes to that tab only and no shared cookie is set. Other clients: cookie as before.
+  if (req.body.bearer) return res.json({ user, token: auth.sign(u) });
   auth.issue(res, u);
-  res.json({ user: { id: u.id, username: u.username, full_name: u.full_name, email: u.email, role: u.role } });
+  res.json({ user });
 });
 
 router.post('/logout', (req, res) => { auth.clear(res); res.json({ ok: true }); });

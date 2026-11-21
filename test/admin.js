@@ -46,6 +46,23 @@ const wait = async (cond, ms = 12000) => { const t = Date.now(); while (Date.now
     await call(admin, 'POST', '/api/auth/login', { username: 'adm', password: 'Adm1nPass!' });
     const now = Date.now();
 
+    /* ===== per-tab sign-in: two different people in one browser stay independent ===== */
+    await call(admin, 'POST', '/api/admin/users', { username: 'tabuser', password: 'secret1', email: 'tab@x.com' });
+    const raw = async (headers, role) => (await fetch(BASE + '/api/auth/me', { headers })).status;
+    const lg = async (u, p) => (await fetch(BASE + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: u, password: p, bearer: true }) }));
+    const aRes = await lg('adm', 'Adm1nPass!'), uRes = await lg('tabuser', 'secret1');
+    const aTok = (await aRes.json()).token, uTok = (await uRes.json()).token;
+    assert.ok(aTok && uTok, 'login returns a token for the tab');
+    assert.equal(aRes.headers.get('set-cookie'), null, 'bearer login sets no shared cookie');
+    const me = async (tok) => (await (await fetch(BASE + '/api/auth/me', { headers: { authorization: 'Bearer ' + tok } })).json()).user.username;
+    assert.equal(await me(aTok), 'adm'); assert.equal(await me(uTok), 'tabuser');   // both "tabs" work at the same time
+    assert.equal(await raw({ authorization: 'Bearer ' + uTok }), 200);
+    assert.equal(await raw({ authorization: 'Bearer ', cookie: admin.cookie }), 401, 'a tab with no token is NOT signed in by another tab\'s cookie');
+    assert.equal(await raw({ authorization: 'Bearer garbage', cookie: admin.cookie }), 401, 'a bad token is rejected, cookie ignored');
+    assert.equal(await raw({ cookie: admin.cookie }), 200, 'cookie sign-in still works for API clients without the header');
+    assert.equal((await fetch(BASE + '/api/admin/exams', { headers: { authorization: 'Bearer ' + uTok } })).status, 403, 'a candidate token cannot use admin APIs');
+    assert.equal((await fetch(BASE + '/api/admin/exams', { headers: { authorization: 'Bearer ' + aTok } })).status, 200);
+
     /* ===== exam: 4 questions, 2 marks each, -1 per wrong, pass 50% ===== */
     const eid = (await call(admin, 'POST', '/api/admin/exams', { name: 'Scoring', duration_min: 30, pass_percent: 50, negative_marks: 1, default_marks: 2,
       start_at: new Date(now - 6e4).toISOString(), end_at: new Date(now + 36e5).toISOString() })).data.id;

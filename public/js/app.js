@@ -17,8 +17,13 @@ const store = {
 document.documentElement.dataset.theme = store.get('jep_theme') || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
 const initials = (n) => String(n || '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
+// Each browser TAB keeps its own sign-in (sessionStorage) and sends it as a Bearer token, so an admin tab and a candidate tab
+// stay independent (the old shared cookie let the last login overwrite the other tab).
+const TOKEN_KEY = 'jep_token';
+const authHeaders = () => ({ Authorization: 'Bearer ' + (store.sget(TOKEN_KEY) || '') });
+
 async function api(method, url, body, isForm) {
-  const opt = { method, headers: {}, credentials: 'same-origin' };
+  const opt = { method, headers: authHeaders(), credentials: 'omit' };
   if (body !== undefined) {
     if (isForm) opt.body = body;
     else { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
@@ -26,7 +31,7 @@ async function api(method, url, body, isForm) {
   let res;
   try { res = await fetch(url, opt); } catch (_) { throw new Error('Network problem. Please check your connection.'); }
   const data = res.headers.get('content-type')?.includes('json') ? await res.json().catch(() => ({})) : {};
-  if (res.status === 401 && JEP.me && !url.includes('/auth/login')) { JEP.me = null; location.hash = '#/login'; }
+  if (res.status === 401 && JEP.me && !url.includes('/auth/login')) { JEP.me = null; store.sdel(TOKEN_KEY); location.hash = '#/login'; }
   if (!res.ok) { const e = new Error(data.error || `Request failed (${res.status})`); e.status = res.status; e.data = data; throw e; }
   return data;
 }
@@ -100,7 +105,7 @@ function shell(active, inner) {
         <div class="avatar">${esc(initials(JEP.me.full_name || JEP.me.username))}</div>
         <button class="btn sm" id="pw">Password</button><button class="btn sm" id="out">Sign out</button></div>
     </div></header><main class="container" id="main">${inner || ''}</main><footer class="foot">© ${new Date().getFullYear()} Jayarama Exam Portal · Secure online examinations</footer>`;
-  $('#out').onclick = async () => { await api('POST', '/api/auth/logout').catch(() => {}); JEP.me = null; location.hash = '#/login'; };
+  $('#out').onclick = () => { store.sdel(TOKEN_KEY); JEP.me = null; location.hash = '#/login'; };
   $('#pw').onclick = changePassword;
   $('#th').onclick = () => {
     const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
@@ -117,6 +122,26 @@ function changePassword() {
     try { await api('POST', '/api/auth/change-password', { current: $('#p1', m).value, next: $('#p2', m).value }); toast('Password updated', 'ok'); m.close(); } catch (e) { fail(e); }
   };
 }
+
+/* Downloads: links marked data-dl are fetched with this tab's token and saved as a file. */
+async function downloadFile(url, fallbackName) {
+  try {
+    const res = await fetch(url, { headers: authHeaders(), credentials: 'omit' });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Download failed (' + res.status + ')'); }
+    const blob = await res.blob();
+    const m = /filename="?([^";]+)"?/.exec(res.headers.get('content-disposition') || '');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = (m && m[1]) || fallbackName || 'download';
+    document.body.append(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  } catch (e) { fail(e); }
+}
+document.addEventListener('click', (ev) => {
+  const a = ev.target.closest && ev.target.closest('[data-dl]');
+  if (!a) return;
+  ev.preventDefault();
+  downloadFile(a.dataset.dl, a.dataset.name);
+});
 
 /* ------------------------------- login -------------------------------- */
 JEP.views.login = () => {
@@ -146,7 +171,8 @@ JEP.views.login = () => {
     const err = $('#lerr'); err.classList.add('hidden');
     $('#lb').disabled = true; $('#lb').textContent = 'Signing in…';
     try {
-      const r = await api('POST', '/api/auth/login', { username: $('#u').value, password: $('#p').value });
+      const r = await api('POST', '/api/auth/login', { username: $('#u').value, password: $('#p').value, bearer: true });
+      store.sset(TOKEN_KEY, r.token);
       JEP.me = r.user;
       // Open the page the person originally asked for (e.g. the assessment link from their e-mail)
       const next = store.sget('jep_next'); store.sdel('jep_next');
@@ -180,7 +206,7 @@ async function route() {
   // An e-mailed assessment link opened in a browser that is still signed in as admin: show the sign-in page
   // (the candidate signs in and lands on the exam), never the admin dashboard.
   if (parts[0] === 'user' && JEP.me.role === 'admin') {
-    await api('POST', '/api/auth/logout').catch(() => {});
+    store.sdel(TOKEN_KEY);
     JEP.me = null;
     if (parts.length > 1) store.sset('jep_next', location.hash);
     location.hash = '#/login';

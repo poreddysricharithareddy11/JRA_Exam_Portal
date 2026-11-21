@@ -46,7 +46,7 @@ async function userHome() {
       <div class="ring" style="--p:${Math.max(0, Math.min(100, r.percent))};--c:var(--${r.passed ? 'ok' : 'bad'})"><b>${Math.round(r.percent)}%</b></div>
       <div class="grow"><div class="row" style="gap:10px"><h3 style="margin:0">${esc(r.name)}</h3><span class="chip ${r.passed ? 'pass' : 'fail'}">${r.passed ? 'PASS' : 'FAIL'}</span></div>
         <div class="pills"><span>📝 Score ${r.score} / ${r.total}</span><span>🗓 ${fmtDT(r.submitted_at)}</span>${how[r.submit_reason] ? `<span>${how[r.submit_reason]}</span>` : ''}</div></div>
-      <div class="row"><a class="btn" href="#/user/result/${r.id}">View report</a><a class="btn" href="/api/user/attempts/${r.id}/pdf">⬇ PDF</a></div></div>`).join('')
+      <div class="row"><a class="btn" href="#/user/result/${r.id}">View report</a><a class="btn" href="#" data-dl="/api/user/attempts/${r.id}/pdf" data-name="result.pdf">⬇ PDF</a></div></div>`).join('')
     : `<div class="empty"><div class="big">🗂️</div><b>No completed exams yet</b><span>Your results appear here right after you submit an exam.</span></div>`);
 
   function draw() {
@@ -343,6 +343,6 @@ async function userResult(aid) {
       <div class="grow"><h1 style="margin-bottom:6px">${esc(a.exam_name)}</h1>
         <div class="meta"><span class="chip ${a.passed ? 'pass' : 'fail'}" style="font-size:.95rem">${a.passed ? 'PASSED' : 'FAILED'}</span><span>Pass mark ${a.pass_percent}%</span><span>✓ ${a.correct} correct</span><span>✗ ${a.wrong} wrong</span><span>– ${a.unanswered} unanswered</span><span>Set ${esc(a.set_name)}</span></div>
         <p class="small mute mt">${!a.email ? '' : a.email_status === 'sent' ? `A PDF copy of this result with the answer key was e-mailed to <b>${esc(a.email)}</b>.` : a.email_status === 'failed' ? 'We could not e-mail the PDF right now — you can download it with the button on the right.' : `A PDF copy of this result with the answer key is being e-mailed to <b>${esc(a.email)}</b>.`}</p></div>
-      <a class="btn" href="/api/user/attempts/${a.id}/pdf">⬇ Download PDF</a></div></div>
+      <a class="btn" href="#" data-dl="/api/user/attempts/${a.id}/pdf" data-name="result.pdf">⬇ Download PDF</a></div></div>
     <h2 class="mt">Your answers &amp; the answer key</h2>${reviewHTML(d.questions)}`);
 }

@@ -178,7 +178,7 @@ function resultsTab(box, id, r) {
     ${s.submitted ? chartsHTML(r.results.filter((x) => x.status === 'submitted'), r.exam.pass_percent) : ''}
     <div class="card"><div class="row mb"><h3 style="margin:0">Candidate results</h3>
       <input type="text" id="rs" placeholder="Search name / username" style="max-width:240px" class="right">
-      <a class="btn sm" href="/api/admin/exams/${id}/results.csv">⬇ Export CSV</a>
+      <a class="btn sm" href="#" data-dl="/api/admin/exams/${id}/results.csv" data-name="results.csv">⬇ Export CSV</a>
       <button class="btn sm" id="rsf">Resend failed e-mails</button></div>
       <div class="tw"><table><thead><tr><th>#</th><th>Candidate</th><th>Set</th><th>Score</th><th>%</th><th>Result</th><th>Violations</th><th>Submitted</th><th>E-mail</th><th></th></tr></thead><tbody id="rt"></tbody></table></div></div>
     ${r.not_attempted.length ? `<details class="card mt"><summary><b>Not attempted (${r.not_attempted.length})</b></summary><p class="small mute mt">${r.not_attempted.map((u) => esc(u.full_name || u.username)).join(', ')}</p></details>` : ''}`;
@@ -189,7 +189,7 @@ function resultsTab(box, id, r) {
       ${x.status === 'submitted' ? `<td>${x.score} / ${x.total}</td><td>${x.percent}%</td><td><span class="chip ${x.passed ? 'pass' : 'fail'}">${x.passed ? 'PASS' : 'FAIL'}</span></td>` : '<td colspan="3"><span class="chip draft">In progress</span></td>'}
       <td>${x.violations || '-'}</td><td class="small">${x.status === 'submitted' ? `${fmtDT(x.submitted_at)}<div class="mute">${reasonText(x.submit_reason)}</div>` : '-'}</td>
       <td>${x.status === 'submitted' ? `<span class="chip ${x.email_status === 'sent' ? 'sent' : x.email_status === 'failed' ? 'failed' : 'pending'}" title="${esc(x.email_error || '')}">${x.email_status}</span>` : ''}</td>
-      <td style="white-space:nowrap">${x.status === 'submitted' ? `<a class="btn sm" href="#/admin/attempt/${x.id}">View</a> <a class="btn sm" href="/api/admin/attempts/${x.id}/pdf">PDF</a> <button class="btn sm" data-rs="${x.id}">Resend</button>` : ''}</td></tr>`).join('')
+      <td style="white-space:nowrap">${x.status === 'submitted' ? `<a class="btn sm" href="#/admin/attempt/${x.id}">View</a> <a class="btn sm" href="#" data-dl="/api/admin/attempts/${x.id}/pdf" data-name="result.pdf">PDF</a> <button class="btn sm" data-rs="${x.id}">Resend</button>` : ''}</td></tr>`).join('')
       : '<tr><td colspan="10" class="mute" style="text-align:center;padding:30px">No results yet.</td></tr>';
     $$('[data-rs]', box).forEach((b) => b.onclick = async () => {
       try { const o = await api('POST', `/api/admin/attempts/${b.dataset.rs}/resend`); toast(o.smtp_configured ? 'E-mail queued' : 'Queued, but SMTP is not configured on the server', o.smtp_configured ? 'ok' : 'err'); } catch (e) { fail(e); }
@@ -208,7 +208,7 @@ async function adminAttempt(aid) {
       <div class="grow"><h2>${esc(a.exam_name)}</h2><p><b>${esc(a.full_name || a.username)}</b> (${esc(a.username)}) · ${esc(a.email)}</p>
         <div class="meta"><span class="chip ${a.passed ? 'pass' : 'fail'}">${a.passed ? 'PASS' : 'FAIL'}</span><span>✓ ${a.correct} correct</span><span>✗ ${a.wrong} wrong</span><span>– ${a.unanswered} unanswered</span><span>Set ${esc(a.set_name)}</span><span>Violations: ${a.violations}</span></div>
         <div class="small mute mt">${reasonText(a.submit_reason)} · Started ${fmtDT(a.started_at)} · Submitted ${fmtDT(a.submitted_at)}</div></div>
-      <a class="btn" href="/api/admin/attempts/${a.id}/pdf">⬇ PDF</a></div></div>
+      <a class="btn" href="#" data-dl="/api/admin/attempts/${a.id}/pdf" data-name="result.pdf">⬇ PDF</a></div></div>
     <h2 class="mt">Answer sheet <span class="small mute">(as shown to this candidate — their own question and option order)</span></h2>${reviewHTML(questions)}`);
 }
 
