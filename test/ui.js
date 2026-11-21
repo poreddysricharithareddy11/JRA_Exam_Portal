@@ -101,9 +101,14 @@ const api = async (m, u, body) => {
 
     // 3) candidate dashboard
     await go('#/user');
-    await waitFor("document.body.innerText.includes('Upcoming & live exams')");
+    await waitFor("document.body.innerText.includes('Upcoming & live')");
     assert.ok((await ev('document.body.innerText')).includes('Aptitude Test 2026'));
     await shot('03-candidate-dashboard');
+    assert.equal(await ev("document.querySelectorAll('.utabs a').length"), 2, 'two tabs: upcoming and completed');
+    await ev("document.querySelector('.utabs a[data-tab=completed]').click();true");
+    assert.equal(await ev("document.querySelectorAll('#pane .ucard[data-s]').length"), 0, 'completed tab shows no upcoming exams');
+    await ev("document.querySelector('.utabs a[data-tab=upcoming]').click();true");
+    await waitFor("document.body.innerText.includes('Aptitude Test 2026')");
     await ev("document.querySelector('#th').click();true");   // dark mode
     await sleep(300); await shot('04-candidate-dark');
     await ev("document.querySelector('#th').click();true");
@@ -112,7 +117,7 @@ const api = async (m, u, body) => {
 
     // 4) a candidate who already finished it: dashboard shows report
     await doLogin('priya', 'secret1');
-    await waitFor("document.body.innerText.includes('Previous results')");
+    await waitFor("document.body.innerText.includes('View report')");
     await shot('05-candidate-with-report');
     await ev("document.querySelector('#out').click();true");
     await waitFor("!!document.querySelector('#lf')");

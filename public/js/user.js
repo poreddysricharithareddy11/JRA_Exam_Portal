@@ -12,37 +12,88 @@ JEP.views.user = async (p) => {
 async function userHome() {
   const [{ exams, now }, { reports }] = await Promise.all([api('GET', '/api/user/exams'), api('GET', '/api/user/reports')]);
   const off = Date.parse(now) - Date.now();
+  const name = esc(JEP.me.full_name || JEP.me.username);
+  const avg = reports.length ? Math.round(reports.reduce((s, r) => s + r.percent, 0) / reports.length) : null;
+  const passed = reports.filter((r) => r.passed).length;
+  const TABKEY = 'jep_utab_' + JEP.me.id;
+  let tab = store.sget(TABKEY);
+  if (tab !== 'upcoming' && tab !== 'completed') tab = exams.length || !reports.length ? 'upcoming' : 'completed';
+  const how = { time_up: 'Auto-submitted: time up', violation: 'Auto-submitted: warnings' };
+
   const main = shell('home', `
-    <div class="hero"><div><h1>Welcome, ${esc(JEP.me.full_name || JEP.me.username)} 👋</h1><p>${exams.some((e) => e.status === 'live') ? 'You have an assessment open right now.' : exams.length ? 'Your upcoming assessments are listed below.' : 'You have no pending assessments.'}</p></div></div>
+    <div class="hero"><div class="grow"><h1>Welcome, ${name} 👋</h1><p id="sub"></p></div><div class="next" id="next"></div></div>
     <div class="tiles">
-      <div class="tile"><div class="ic g">🟢</div><div><b>${exams.filter((e) => e.status === 'live').length}</b><span>Open now</span></div></div>
-      <div class="tile"><div class="ic c">📅</div><div><b>${exams.filter((e) => e.status === 'upcoming').length}</b><span>Upcoming</span></div></div>
-      <div class="tile"><div class="ic b">✅</div><div><b>${reports.length}</b><span>Completed</span></div></div>
-      <div class="tile"><div class="ic y">🏆</div><div><b>${reports.length ? Math.round(reports.reduce((s, r) => s + r.percent, 0) / reports.length) + '%' : '–'}</b><span>Average score</span></div></div></div>
-    <div class="sec-title"><h2>Upcoming &amp; live exams</h2></div>
-    <div id="ex">${exams.length ? exams.map((e) => `<div class="card ecard" data-s="${Date.parse(e.start_at)}" data-e="${Date.parse(e.end_at)}">
-        <div class="grow"><h3>${esc(e.name)} <span data-chip></span></h3>
-          <div class="meta"><span>🗓 ${fmtDT(e.start_at)} → ${fmtDT(e.end_at)}</span><span>⏱ ${dur(e.duration_min)}</span><span>🎯 Pass ${e.pass_percent}%</span>${e.negative_marks ? `<span>➖ -${e.negative_marks} per wrong</span>` : ''}</div>
-          <div class="small mute" data-cd></div></div>
-        <a class="btn primary" href="#/user/exam/${e.id}" data-btn>${e.attempt_status === 'in_progress' ? 'Resume exam' : 'View instructions'}</a></div>`).join('')
-      : '<div class="card mute" style="text-align:center;padding:36px">No upcoming exams right now. Please check back later.</div>'}</div>
-    ${reports.length ? `<div class="sec-title"><h2>Previous results</h2></div><div class="card"><div class="tw"><table>
-      <thead><tr><th>Exam</th><th>Submitted</th><th>Score</th><th>%</th><th>Result</th><th></th></tr></thead><tbody>
-      ${reports.map((r) => `<tr><td><b>${esc(r.name)}</b></td><td class="small">${fmtDT(r.submitted_at)}</td><td>${r.score} / ${r.total}</td><td>${r.percent}%</td>
-        <td><span class="chip ${r.passed ? 'pass' : 'fail'}">${r.passed ? 'PASS' : 'FAIL'}</span></td>
-        <td style="white-space:nowrap"><a class="btn sm" href="#/user/result/${r.id}">View report</a> <a class="btn sm" href="/api/user/attempts/${r.id}/pdf">PDF</a></td></tr>`).join('')}
-      </tbody></table></div></div>` : ''}`);
-  const tick = () => {
+      <div class="tile pick" data-go="upcoming" role="button" tabindex="0"><div class="ic g">🟢</div><div><b id="n-live">0</b><span>Open now</span></div></div>
+      <div class="tile pick" data-go="upcoming" role="button" tabindex="0"><div class="ic c">📅</div><div><b id="n-up">0</b><span>Upcoming</span></div></div>
+      <div class="tile pick" data-go="completed" role="button" tabindex="0"><div class="ic b">✅</div><div><b>${reports.length}</b><span>Completed${reports.length ? ` · ${passed} passed` : ''}</span></div></div>
+      <div class="tile"><div class="ic y">🏆</div><div><b>${avg === null ? '–' : avg + '%'}</b><span>Average score</span></div></div></div>
+    <div class="tabs utabs" role="tablist">
+      <a href="#/user" data-tab="upcoming" role="tab">Upcoming &amp; live <span class="cnt" id="c-up">${exams.length}</span></a>
+      <a href="#/user" data-tab="completed" role="tab">Completed <span class="cnt">${reports.length}</span></a></div>
+    <div id="pane"></div>`);
+
+  const upcomingHTML = () => (exams.length ? exams.map((e) => `<div class="ucard" data-s="${Date.parse(e.start_at)}" data-e="${Date.parse(e.end_at)}" data-ip="${e.attempt_status === 'in_progress' ? 1 : 0}" data-id="${e.id}" data-n="${esc(e.name)}">
+      <span class="accent"></span>
+      <div class="grow"><div class="row" style="gap:10px"><h3 style="margin:0">${esc(e.name)}</h3><span data-chip></span></div>
+        <div class="pills"><span>🗓 ${fmtDT(e.start_at)} → ${fmtDT(e.end_at)}</span><span>⏱ ${dur(e.duration_min)}</span><span>❓ ${e.question_count} questions</span><span>🎯 Pass ${e.pass_percent}%</span>${e.negative_marks ? `<span>➖ -${e.negative_marks} per wrong</span>` : ''}</div>
+        <div class="window hidden"><div class="prog"><div data-bar></div></div></div>
+        <div class="cd" data-cd></div></div>
+      <a class="btn lg" href="#/user/exam/${e.id}" data-btn>View instructions</a></div>`).join('')
+    : `<div class="empty"><div class="big">📭</div><b>No upcoming exams</b><span>When an exam is scheduled for you it will appear here.</span></div>`);
+
+  const completedHTML = () => (reports.length ? reports.map((r) => `<div class="ucard done">
+      <span class="accent ${r.passed ? 'ok' : 'bad'}"></span>
+      <div class="ring" style="--p:${Math.max(0, Math.min(100, r.percent))};--c:var(--${r.passed ? 'ok' : 'bad'})"><b>${Math.round(r.percent)}%</b></div>
+      <div class="grow"><div class="row" style="gap:10px"><h3 style="margin:0">${esc(r.name)}</h3><span class="chip ${r.passed ? 'pass' : 'fail'}">${r.passed ? 'PASS' : 'FAIL'}</span></div>
+        <div class="pills"><span>📝 Score ${r.score} / ${r.total}</span><span>🗓 ${fmtDT(r.submitted_at)}</span>${how[r.submit_reason] ? `<span>${how[r.submit_reason]}</span>` : ''}</div></div>
+      <div class="row"><a class="btn" href="#/user/result/${r.id}">View report</a><a class="btn" href="/api/user/attempts/${r.id}/pdf">⬇ PDF</a></div></div>`).join('')
+    : `<div class="empty"><div class="big">🗂️</div><b>No completed exams yet</b><span>Your results appear here right after you submit an exam.</span></div>`);
+
+  function draw() {
+    store.sset(TABKEY, tab);
+    $$('.utabs a', main).forEach((a) => a.classList.toggle('on', a.dataset.tab === tab));
+    $('#pane', main).innerHTML = tab === 'upcoming' ? upcomingHTML() : completedHTML();
+    tick();
+  }
+  const go = (t) => { tab = t; draw(); };
+  $$('.utabs a', main).forEach((a) => { a.onclick = (ev) => { ev.preventDefault(); go(a.dataset.tab); }; });
+  $$('.tile.pick', main).forEach((el) => {
+    el.onclick = () => go(el.dataset.go);
+    el.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(el.dataset.go); } };
+  });
+
+  // everything time-dependent (status chips, countdowns, buttons, the "next up" banner) is recomputed every second
+  function tick() {
     const t = Date.now() + off;
-    $$('#ex .ecard', main).forEach((c) => {
-      const s = +c.dataset.s, e = +c.dataset.e;
-      const st = t < s ? 'upcoming' : t <= e ? 'live' : 'ended';
+    let live = 0, up = 0, next = null;
+    for (const e of exams) {
+      const s = Date.parse(e.start_at), en = Date.parse(e.end_at);
+      if (t > en) continue;
+      if (t >= s) { live++; if (!next || next.live === false || en < next.end) next = { e, live: true, end: en }; }
+      else { up++; if (!next || (next.live === false && s < next.start)) next = { e, live: false, start: s }; }
+    }
+    $('#n-live', main).textContent = live; $('#n-up', main).textContent = up;
+    $('#c-up', main).textContent = live + up;
+    $('#sub', main).textContent = live ? 'You have an assessment open right now.' : up ? 'Your upcoming assessments are listed below.' : 'You have no pending assessments.';
+    $('#next', main).innerHTML = next
+      ? `<small>${next.live ? 'OPEN NOW' : 'NEXT UP'}</small><b>${esc(next.e.name)}</b><span>${next.live ? `Closes in ${fmtCountdown(next.end - t)}` : `Opens in ${fmtCountdown(next.start - t)}`}</span>
+         <a class="btn" href="#/user/exam/${next.e.id}">${next.live ? (next.e.attempt_status === 'in_progress' ? 'Resume exam' : 'Start exam') : 'View instructions'}</a>`
+      : '<small>NEXT UP</small><b>Nothing scheduled</b><span>Check back later</span>';
+    $$('#pane .ucard[data-s]', main).forEach((c) => {
+      const s = +c.dataset.s, en = +c.dataset.e, inProg = c.dataset.ip === '1';
+      const st = t < s ? 'upcoming' : t <= en ? 'live' : 'ended';
+      c.classList.toggle('is-live', st === 'live');
       $('[data-chip]', c).innerHTML = chip(st);
-      $('[data-cd]', c).textContent = st === 'upcoming' ? `Opens in ${fmtCountdown(s - t)}` : st === 'live' ? `Open now · closes in ${fmtCountdown(e - t)}` : 'This exam has closed';
-      $('[data-btn]', c).classList.toggle('hidden', st === 'ended');
+      $('[data-cd]', c).textContent = st === 'upcoming' ? `Opens in ${fmtCountdown(s - t)}` : st === 'live' ? `Open now · closes in ${fmtCountdown(en - t)}` : 'This exam has closed';
+      const w = $('.window', c); w.classList.toggle('hidden', st !== 'live');
+      if (st === 'live') $('[data-bar]', c).style.width = Math.min(100, Math.max(0, ((t - s) / (en - s)) * 100)) + '%';
+      const b = $('[data-btn]', c);
+      b.classList.toggle('hidden', st === 'ended');
+      b.classList.toggle('primary', st === 'live');
+      b.textContent = st === 'live' ? (inProg ? 'Resume exam' : 'Start exam') : 'View instructions';
     });
-  };
-  tick();
+  }
+  draw();
   const iv = setInterval(tick, 1000);
   JEP.cleanup = () => clearInterval(iv);
 }
