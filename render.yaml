@@ -4,6 +4,7 @@ services:
     name: jayarama-exam-portal
     runtime: node
     plan: free
+    region: ohio
     autoDeploy: true
     buildCommand: npm ci --omit=dev --omit=optional
     startCommand: node src/server.js
@@ -29,7 +30,4 @@ services:
         sync: false
       - key: ADMIN_EMAIL
         sync: false
-      - key: BREVO_API_KEY       # Brevo > SMTP & API > API keys
-        sync: false
-      - key: MAIL_FROM           # a sender verified in Brevo, e.g. Jayarama Exam Portal <you@gmail.com>
-        sync: false
+      # E-mail (optional, add later in the Render dashboard > Environment): BREVO_API_KEY and MAIL_FROM
