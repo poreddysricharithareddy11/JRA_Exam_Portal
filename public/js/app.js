@@ -130,12 +130,12 @@ JEP.views.login = () => {
           <div><i>🔀</i><span><b>Unique papers</b><br><small>Every candidate gets their own paper</small></span></div></div></div>
       <small style="opacity:.7">© Jayarama Exam Portal</small>
     </section>
-    <section class="form-pane"><form class="login" id="lf" autocomplete="on">
+    <section class="form-pane"><form class="login" id="lf" autocomplete="off">
       <img class="loginlogo" src="/brand/logo" alt="Jayarama Associates">
       <h2 style="margin-bottom:4px">Welcome back</h2>
       <p class="mute small" style="margin:0 0 18px">Sign in with the username and password you were given.</p>
-      <div class="field"><label class="f" for="u">Username</label><input type="text" id="u" name="username" autocomplete="username" required autofocus></div>
-      <div class="field"><label class="f" for="p">Password</label><div class="pwwrap"><input type="password" id="p" name="password" autocomplete="current-password" required><button type="button" id="eye">Show</button></div></div>
+      <div class="field"><label class="f" for="u">Username</label><input type="text" id="u" name="username" autocomplete="off" autocapitalize="none" spellcheck="false" data-lpignore="true" required autofocus></div>
+      <div class="field"><label class="f" for="p">Password</label><div class="pwwrap"><input type="password" id="p" name="password" autocomplete="new-password" data-lpignore="true" required><button type="button" id="eye">Show</button></div></div>
       <div id="lerr" class="alert bad hidden"></div>
       <button class="btn primary lg" style="width:100%;justify-content:center" id="lb">Sign in</button>
       <p class="small mute" style="margin:16px 0 0;text-align:center">Trouble signing in? Contact your exam administrator.</p>
