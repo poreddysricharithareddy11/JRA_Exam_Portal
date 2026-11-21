@@ -17,7 +17,10 @@ const cfg = require('./config');
 const als = new AsyncLocalStorage();           // holds the connection of the transaction we are currently inside
 const ID_TABLES = new Set(['users', 'exams', 'questions', 'attempts', 'notifications', 'question_changes']);
 // Neon's copied string ends with "&channel_binding=require", which the Node driver does not support: drop it.
-const DBURL = (process.env.DATABASE_URL || '').trim().replace(/([?&])channel_binding=[^&]*&?/, '$1').replace(/[?&]$/, '');
+const DBURL = (process.env.DATABASE_URL || '').trim().replace(/([?&])channel_binding=[^&]*&?/, '$1').replace(/[?&]$/, '')
+  // The TLS mode is set explicitly below (full certificate verification), so drop it from the URL: this also silences
+  // the driver's "sslmode will change meaning" warning.
+  .replace(/([?&])sslmode=[^&]*&?/, '$1').replace(/[?&]$/, '');
 
 let impl;
 
@@ -28,7 +31,7 @@ if (DBURL) {
   types.setTypeParser(1700, Number);    // NUMERIC -> number
   const pool = new Pool({
     connectionString: DBURL,
-    ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
+    ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: process.env.DATABASE_SSL_VERIFY !== 'false' },
     max: parseInt(process.env.DB_POOL || '10', 10),
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 15000,
