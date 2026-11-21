@@ -21,7 +21,7 @@ async function userHome() {
   const how = { time_up: 'Auto-submitted: time up', violation: 'Auto-submitted: warnings' };
 
   const main = shell('home', `
-    <div class="hero"><div class="grow"><h1>Welcome, ${name} 👋</h1><p id="sub"></p></div><div class="next" id="next"></div></div>
+    <div class="hero"><div class="grow"><h1>Welcome, ${name} 👋</h1><p id="sub"></p></div></div>
     <div class="tiles">
       <div class="tile pick" data-go="upcoming" role="button" tabindex="0"><div class="ic g">🟢</div><div><b id="n-live">0</b><span>Open now</span></div></div>
       <div class="tile pick" data-go="upcoming" role="button" tabindex="0"><div class="ic c">📅</div><div><b id="n-up">0</b><span>Upcoming</span></div></div>
@@ -62,23 +62,19 @@ async function userHome() {
     el.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(el.dataset.go); } };
   });
 
-  // everything time-dependent (status chips, countdowns, buttons, the "next up" banner) is recomputed every second
+  // everything time-dependent (status chips, countdowns, buttons) is recomputed every second
   function tick() {
     const t = Date.now() + off;
-    let live = 0, up = 0, next = null;
+    let live = 0, up = 0;
     for (const e of exams) {
       const s = Date.parse(e.start_at), en = Date.parse(e.end_at);
       if (t > en) continue;
-      if (t >= s) { live++; if (!next || next.live === false || en < next.end) next = { e, live: true, end: en }; }
-      else { up++; if (!next || (next.live === false && s < next.start)) next = { e, live: false, start: s }; }
+      if (t >= s) live++;
+      else up++;
     }
     $('#n-live', main).textContent = live; $('#n-up', main).textContent = up;
     $('#c-up', main).textContent = live + up;
     $('#sub', main).textContent = live ? 'You have an assessment open right now.' : up ? 'Your upcoming assessments are listed below.' : 'You have no pending assessments.';
-    $('#next', main).innerHTML = next
-      ? `<small>${next.live ? 'OPEN NOW' : 'NEXT UP'}</small><b>${esc(next.e.name)}</b><span>${next.live ? `Closes in ${fmtCountdown(next.end - t)}` : `Opens in ${fmtCountdown(next.start - t)}`}</span>
-         <a class="btn" href="#/user/exam/${next.e.id}">${next.live ? (next.e.attempt_status === 'in_progress' ? 'Resume exam' : 'Start exam') : 'View instructions'}</a>`
-      : '<small>NEXT UP</small><b>Nothing scheduled</b><span>Check back later</span>';
     $$('#pane .ucard[data-s]', main).forEach((c) => {
       const s = +c.dataset.s, en = +c.dataset.e, inProg = c.dataset.ip === '1';
       const st = t < s ? 'upcoming' : t <= en ? 'live' : 'ended';
