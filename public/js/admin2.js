@@ -25,7 +25,7 @@ async function inviteTab(box, id) {
   const ended = Date.now() > Date.parse(e.end_at);
 
   box.innerHTML = `
-    ${!d.smtp_configured ? '<div class="alert warn">E-mail is not set up on the server. Add the mail account settings (see the README) and restart.</div>' : ''}
+    ${!d.smtp_configured ? '<div class="alert warn">E-mail is not set up on the server. In Render > Environment add BREVO_API_KEY and MAIL_FROM, save, and wait for the redeploy.</div>' : ''}
     ${!e.published ? '<div class="alert warn">Publish the exam first.</div>' : ''}
     ${ended ? '<div class="alert warn">This exam has ended.</div>' : ''}
     <div class="card">

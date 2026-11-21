@@ -349,7 +349,7 @@ router.get('/exams/:id/changes', async (req, res) => {
 // Re-send every submitted candidate's result PDF (after a correction changed the results).
 router.post('/exams/:id/resend-all', async (req, res) => {
   const e = await loadExam(req, res); if (!e) return;
-  if (!mailer.configured()) return bad(res, 'E-mail is not set up on the server yet (see the README: mail provider settings).');
+  if (!mailer.configured()) return bad(res, 'E-mail is not set up on the server. In Render > Environment add BREVO_API_KEY and MAIL_FROM, save, and wait for the redeploy.');
   const rows = await db.prepare("SELECT id FROM attempts WHERE exam_id=? AND status='submitted'").all(e.id);
   for (const r of rows) await mailer.resend(r.id);
   res.json({ queued: rows.length });
@@ -408,7 +408,7 @@ router.post('/exams/:id/notify', async (req, res) => {
   const e = await loadExam(req, res); if (!e) return;
   const b = req.body || {};
   if (!e.published) return bad(res, 'Publish the exam before sending invitations.');
-  if (!mailer.configured()) return bad(res, 'E-mail is not configured on the server. Add the mail provider settings (see the README) and restart.');
+  if (!mailer.configured()) return bad(res, 'E-mail is not set up on the server. In Render > Environment add BREVO_API_KEY and MAIL_FROM, save, and wait for the redeploy.');
   const kind = b.kind === 'reminder' ? 'reminder' : 'invite';
   const now = Date.now();
   if (now > Date.parse(e.end_at)) return bad(res, 'This exam has already ended.');

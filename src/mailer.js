@@ -177,4 +177,4 @@ async function resend(id) {
 
 setSubmitHook(enqueue);
 
-module.exports = { enqueue, enqueueNotice, notifyUsers, retryPending, resend, configured, provider };
+module.exports = { deliver, enqueue, enqueueNotice, notifyUsers, retryPending, resend, configured, provider };
