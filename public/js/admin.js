@@ -90,14 +90,36 @@ function examFormHTML(e) {
 }
 /** The earliest closing time that still lets the whole exam be taken: opening time + duration (as a datetime-local value). */
 const earliestClose = (startIso, durationMin) => toLocalInput(new Date(Date.parse(startIso) + Number(durationMin) * 60000).toISOString());
-/** Keep the "Closes at" picker's minimum equal to opening time + duration while the admin edits either of them. */
-function wireClosing(form) {
-  const upd = () => {
-    const s = form.elements.start_at.value, d = form.elements.duration_min.value;
-    if (s && d) form.elements.end_at.min = earliestClose(fromLocalInput(s), d);
+/**
+ * The closing time can never be earlier than opening time + duration. The browser's own "min" only blocks Save, and the time part of
+ * the picker still lets an earlier time be chosen, so check the value the moment it is picked: say why, and put it back to the earliest
+ * allowed time. getMin() returns that earliest time as a datetime-local value ('' when it cannot be known yet).
+ */
+function guardClosing(input, getMin) {
+  const note = document.createElement('div');
+  note.className = 'hint closing-error'; note.style.color = 'var(--bad)'; note.style.fontWeight = '600'; note.hidden = true;
+  input.parentElement.append(note);
+  const check = (fix) => {
+    const min = getMin();
+    input.min = min;
+    if (!min || !input.value || input.value >= min) { input.setCustomValidity(''); note.hidden = true; return true; }
+    const msg = 'The closing time cannot be earlier than ' + fmtDT(fromLocalInput(min)) + ' (opening time + duration).';
+    if (fix) { input.value = min; input.setCustomValidity(''); } else input.setCustomValidity(msg);
+    note.textContent = msg + (fix ? ' It has been set to that time.' : '');
+    note.hidden = false;
+    return false;
   };
-  ['start_at', 'duration_min'].forEach((n) => form.elements[n].addEventListener('input', upd));
-  upd();
+  input.addEventListener('input', () => check(false));
+  input.addEventListener('change', () => check(true));
+  input.addEventListener('blur', () => check(true));
+  check(false);
+  return check;
+}
+/** Create / draft form: the minimum follows the opening time and the duration while the admin edits them. */
+function wireClosing(form) {
+  const min = () => { const st = form.elements.start_at.value, d = form.elements.duration_min.value; return st && d ? earliestClose(fromLocalInput(st), d) : ''; };
+  const check = guardClosing(form.elements.end_at, min);
+  ['start_at', 'duration_min'].forEach((n) => form.elements[n].addEventListener('input', () => check(true)));
 }
 function readExamForm(form) {
   const f = Object.fromEntries(new FormData(form));
@@ -152,11 +174,13 @@ async function adminExam(id, tab) {
         <p class="small mute" style="margin:12px 0 0">This exam is published, so these settings are locked. You can only change the closing time.</p>
       </div>
       <div class="card"><form id="ef">
-        <div class="field" style="max-width:320px"><label class="f">Closing time</label><input type="datetime-local" name="end_at" required value="${toLocalInput(exam.end_at)}" min="${earliestClose(exam.start_at, exam.duration_min)}"><div class="hint">Any date from ${fmtDT(new Date(Date.parse(exam.start_at) + exam.duration_min * 60000).toISOString())} onwards (opening time + ${dur(exam.duration_min)} duration). Earlier or later than now, as you wish. Candidates already writing keep their own deadline.</div></div>
+        <div class="field" style="max-width:320px"><label class="f">Closing time</label><input type="datetime-local" name="end_at" required value="${toLocalInput(exam.end_at)}" min="${earliestClose(exam.start_at, exam.duration_min)}"><div class="hint">Any date from ${fmtDT(new Date(Date.parse(exam.start_at) + exam.duration_min * 60000).toISOString())} onwards (opening time + ${dur(exam.duration_min)} duration). Candidates already writing keep their own deadline.</div></div>
         <button class="btn primary">Save closing time</button>
       </form></div>`;
+      const checkEnd = guardClosing($('#ef', box).elements.end_at, () => earliestClose(exam.start_at, exam.duration_min));
       $('#ef', box).onsubmit = async (ev) => {
         ev.preventDefault();
+        if (!checkEnd(true)) return;      // too early: it was corrected, let the admin look at it before saving
         try {
           const end = fromLocalInput(ev.target.elements.end_at.value);
           if (Date.parse(end) < Date.now() && !await confirmBox('This closing time is already in the past, so the exam will be closed to new candidates straight away. Continue?', 'Save', false)) return;

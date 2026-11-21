@@ -172,6 +172,30 @@ const api = async (m, u, body) => {
     assert.ok(settingsText.includes('published') && settingsText.includes('Questions per candidate') && settingsText.includes('Number of sets'), 'summary tile shown');
     assert.equal(await ev("document.querySelectorAll('input[name=num_sets], textarea[name=instructions], input[name=start_at]').length"), 0, 'locked fields are not shown as inputs');
     assert.equal(await ev("document.querySelectorAll('#ef input').length"), 1, 'only the closing time is editable');
+    // the closing time cannot be picked earlier than opening time + duration: it is corrected the moment it is picked, with the reason shown
+    const pick = (v, ev2) => ev(`(() => { const i = document.querySelector('input[name=end_at]'); i.value = ${JSON.stringify(v)}; ${ev2.map((n) => `i.dispatchEvent(new Event('${n}', { bubbles: true }));`).join(' ')} })();true`);
+    const minEnd = await ev("document.querySelector('input[name=end_at]').min");
+    assert.ok(minEnd, 'the picker has a minimum (opening time + duration)');
+    await pick('2020-01-01T00:00', ['input']);                       // while typing: Save is blocked and the reason is shown
+    assert.equal(await ev("document.querySelector('input[name=end_at]').validity.customError"), true, 'too early blocks Save');
+    assert.equal(await ev("document.querySelector('.closing-error').hidden"), false);
+    await ev("document.querySelector('input[name=end_at]').scrollIntoView({block:'center'});true");
+    await shot('21-closing-time-too-early');
+    await pick('2020-01-01T00:00', ['input', 'change']);             // once picked: put back to the earliest allowed time
+    assert.equal(await ev("document.querySelector('input[name=end_at]').value"), minEnd, 'an earlier time is put back to opening time + duration');
+    assert.match(await ev("document.querySelector('.closing-error').textContent"), /cannot be earlier than/);
+    await pick('2099-01-01T10:00', ['input', 'change']);             // a later time is left alone
+    assert.equal(await ev("document.querySelector('input[name=end_at]').value"), '2099-01-01T10:00', 'a later time is accepted untouched');
+    assert.equal(await ev("document.querySelector('.closing-error').hidden"), true);
+    // the same on the create-exam form (the minimum follows the opening time and the duration)
+    await go('#/admin/exam/new');
+    await waitFor("!!document.querySelector('input[name=duration_min]')");
+    await ev("(() => { const f = document.querySelector('#ef').elements; f.start_at.value = '2030-01-01T10:00'; f.duration_min.value = '60'; f.start_at.dispatchEvent(new Event('input', { bubbles: true })); })();true");
+    assert.equal(await ev("document.querySelector('input[name=end_at]').min"), '2030-01-01T11:00', 'minimum = opening time + duration');
+    await ev("(() => { const i = document.querySelector('input[name=end_at]'); i.value = '2030-01-01T10:30'; i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new Event('change', { bubbles: true })); })();true");
+    assert.equal(await ev("document.querySelector('input[name=end_at]').value"), '2030-01-01T11:00', 'create form: an earlier closing time is corrected too');
+    await go(`#/admin/exam/${eid}/settings`);
+    await waitFor("!!document.querySelector('input[name=end_at]')");
     await shot('20-exam-settings');
     await go(`#/admin/exam/${eid}/questions`);
     await waitFor("document.body.innerText.includes('12 questions')");
