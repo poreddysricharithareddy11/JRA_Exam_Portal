@@ -154,6 +154,7 @@ const api = async (m, u, body) => {
     await shot('05-result-manual');
     // the candidate's dashboard now lists the report
     await ev("location.hash='#/user';true");
+    await waitFor("!!document.querySelector('.utabs a[data-tab=completed]')");
     await ev("document.querySelector('.utabs a[data-tab=completed]').click();true");
     await waitFor("document.body.innerText.includes('View report')");
     // one attempt only: the exam is no longer offered to start again
