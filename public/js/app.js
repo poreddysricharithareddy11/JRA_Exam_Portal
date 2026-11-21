@@ -245,3 +245,27 @@ window.addEventListener('load', route);
     if (target) target.click();
   }, { passive: true });
 })();
+
+/* A tab that stays open never reloads by itself, so it could keep running an old copy of the portal after an update.
+   Every minute ask the server which version is deployed; when it changes, offer a one-click refresh (never during an exam). */
+(() => {
+  let base = null, shown = false;
+  const check = async () => {
+    try {
+      const d = await (await fetch('/healthz', { cache: 'no-store' })).json();
+      if (!d || !d.commit) return;                                   // only the hosted site reports a version
+      if (base === null) { base = d.commit; return; }
+      if (d.commit === base || shown || JEP.guard) return;           // JEP.guard is set while a candidate is taking an exam
+      shown = true;
+      const bar = document.createElement('div');
+      bar.id = 'newver';
+      bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:9999;background:#4338ca;color:#fff;padding:10px 16px;display:flex;gap:12px;align-items:center;justify-content:center;font-weight:600;box-shadow:0 2px 12px rgba(0,0,0,.25)';
+      bar.innerHTML = '<span>A new version of the portal is available.</span><button style="background:#fff;color:#4338ca;border:0;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer">Refresh now</button>';
+      bar.querySelector('button').onclick = () => location.reload();
+      document.body.append(bar);
+    } catch (_) { /* server restarting: try again next minute */ }
+  };
+  JEP.checkVersion = check;
+  check();
+  setInterval(() => { if (!document.hidden) check(); }, 60000);
+})();

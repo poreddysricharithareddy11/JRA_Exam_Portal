@@ -130,6 +130,13 @@ const api = async (m, u, body) => {
     assert.equal(await ev("document.body.classList.contains('wm')"), true, 'watermark enabled on signed-in pages');
     assert.equal(await ev("getComputedStyle(document.body, '::after').backgroundImage.includes('/brand/logo')"), true, 'watermark uses the logo');
     await shot('06-admin-exams');
+    // a tab that stays open is told when a newer version of the portal has been deployed (simulated: the server reports a new commit)
+    await ev("(() => { const real = window.fetch; let n = 0; window.__realFetch = real; window.fetch = (u, o) => (String(u).includes('healthz') ? Promise.resolve({ json: async () => ({ commit: n++ ? 'bbbbbbb' : 'aaaaaaa' }) }) : real(u, o)); })();true");
+    await ev('JEP.checkVersion().then(() => JEP.checkVersion()).then(() => true)');
+    assert.equal(await ev("!!document.querySelector('#newver')"), true, 'banner offered when a new version is deployed');
+    assert.match(await ev("document.querySelector('#newver').innerText"), /new version.*Refresh now/is);
+    await shot('06b-new-version-banner');
+    await ev("window.fetch = window.__realFetch; document.querySelector('#newver').remove(); true");
     await go(`#/admin/exam/${eid}/invite`);
     await waitFor("!!document.querySelector('#send')");
     assert.ok((await ev('document.body.innerText')).includes('not set up'), 'warns that e-mail is not configured');
