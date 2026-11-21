@@ -217,7 +217,17 @@ async function route() {
 
   const v = JEP.views[JEP.me.role];
   bar(true);
-  try { await v(parts.slice(1)); } catch (e) { fail(e); } finally { bar(false); }
+  try { await v(parts.slice(1)); }
+  catch (e) {
+    // "not found" on a page the person opened by address (a link to an exam they were not invited to, or one that was deleted):
+    // explain it and land on their own home page instead of leaving a half-drawn screen behind.
+    const home = JEP.me.role === 'admin' ? '#/admin' : '#/user';
+    if (e.status === 404 && location.hash !== home) {
+      toast(JEP.me.role === 'admin' ? 'That page no longer exists.' : "This exam isn't available to you. If you were expecting it, ask the administrator to invite you.", 'err');
+      location.hash = home;
+    } else fail(e);
+  }
+  finally { bar(false); }
 }
 window.addEventListener('hashchange', route);
 window.addEventListener('load', route);

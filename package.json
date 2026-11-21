@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node test/parser.js && node test/pdf.js && node test/smoke.js && node test/pool.js && node test/import.js && node test/admin.js && node test/mail.js",
-    "test:ui": "node test/ui.js && node test/exam.js && node test/tabs.js"
+    "test:ui": "node test/ui.js && node test/exam.js && node test/tabs.js && node test/landing.js"
   },
   "engines": {
     "node": ">=20"
