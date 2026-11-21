@@ -125,13 +125,12 @@ const api = async (m, u, body) => {
     assert.equal(await ev("getComputedStyle(document.body, '::after').backgroundImage.includes('/brand/logo')"), true, 'watermark uses the logo');
     await shot('06-admin-exams');
     await go(`#/admin/exam/${eid}/invite`);
-    await waitFor("!!document.querySelector('#lnk')");
-    assert.ok((await ev("document.querySelector('#lnk').value")).endsWith(`/#/user/exam/${eid}`), 'link shown');
+    await waitFor("!!document.querySelector('#send')");
     assert.ok((await ev('document.body.innerText')).includes('not set up'), 'warns that e-mail is not configured');
-    await ev("document.querySelector('input[name=mode][value=all]').click();true");
+    assert.equal(await ev("document.querySelectorAll('#lnk, input[name=mode]').length"), 0, 'no extra link box or mode cards');
+    await ev("document.querySelector('#all').click();true");
     assert.match(await ev("document.querySelector('#send').textContent"), /invitation to 3 candidates/);
-    assert.equal(await ev("document.querySelector('input[name=kind][value=reminder]').disabled"), true, 'reminder not offered after the exam started');
-    assert.match(await ev('document.body.innerText'), /already started/);
+    assert.equal(await ev("document.querySelector('#kinds [data-k=reminder]').disabled"), true, 'reminder not offered after the exam started');
     await shot('07-admin-invite');
     await go(`#/admin/exam/${eid}/live`);
     await waitFor("document.body.innerText.includes('Rahul Verma')");
@@ -141,21 +140,19 @@ const api = async (m, u, body) => {
     await waitFor("!!document.querySelector('.hist')");
     await shot('09-admin-results');
     await go(`#/admin/exam/${eid}/settings`);
-    await waitFor("!!document.querySelector('textarea[name=instructions]')");
-    assert.ok((await ev("document.querySelector('textarea[name=instructions]').value")).includes('Bring your photo ID.'), 'settings show the admin instructions');
-    assert.equal(await ev("!!document.querySelector('input[name=auto_remind_min]')"), false, 'no auto-reminder option');
-    assert.equal(await ev("document.querySelector('input[name=questions_per_attempt]').value"), '5');
-    assert.equal(await ev("document.querySelector('input[name=num_sets]').value"), '3', 'the typed number of sets is kept');
-    assert.equal(await ev("document.querySelector('input[name=questions_per_attempt]').placeholder"), '', 'numeric box has no text placeholder');
-    await ev("document.querySelector('input[name=num_sets]').scrollIntoView({block:'center'});true");
+    await waitFor("!!document.querySelector('input[name=end_at]')");
+    const settingsText = await ev('document.body.innerText');
+    assert.ok(settingsText.includes('published') && settingsText.includes('Questions per candidate') && settingsText.includes('Number of sets'), 'summary tile shown');
+    assert.equal(await ev("document.querySelectorAll('input[name=num_sets], textarea[name=instructions], input[name=start_at]').length"), 0, 'locked fields are not shown as inputs');
+    assert.equal(await ev("document.querySelectorAll('#ef input').length"), 1, 'only the closing time is editable');
     await shot('20-exam-settings');
     await go(`#/admin/exam/${eid}/questions`);
-    await waitFor("document.body.innerText.includes('Question bank: 12 questions')");
-    await waitFor("document.body.innerText.includes('3 sets × 5 questions')");
+    await waitFor("document.body.innerText.includes('12 questions')");
     const qt = await ev('document.body.innerText');
-    assert.ok(qt.includes('Set 1') && qt.includes('Set 2') && qt.includes('Set 3'), 'three generated sets are listed');
-    assert.equal(await ev("!!document.querySelector('#uq select')"), false, 'no set picker on the upload form');
-    assert.ok(!qt.includes('Set number'), 'no per-set controls');
+    assert.ok(qt.includes('3 sets × 5'), 'sets summary shown');
+    assert.ok(qt.includes('Download PDF') && qt.includes('View question bank'), 'PDF and view buttons');
+    assert.equal(await ev("document.querySelectorAll('.qedit').length"), 0, 'question list hidden until asked');
+    assert.equal(await ev("!!document.querySelector('#uq')"), false, 'no upload form once published');
     await shot('10-admin-questions');
     // an exam nobody has started yet: the upload forms are visible, with no set pickers anywhere
     const e2 = (await api('POST', '/api/admin/exams', { name: 'Fresh Exam', duration_min: 30, pass_percent: 50, num_sets: 4, questions_per_attempt: 8,
@@ -198,16 +195,18 @@ const api = async (m, u, body) => {
     assert.match(await ev("document.querySelector('#pv_strip').textContent"), /1→B.*2→C.*3→B.*4→A.*5→B/, 'final key shown as question → answer');
     await shot('16-review-complete');
     await ev("document.querySelector('#svq').click();true");
-    await waitFor("document.body.innerText.includes('Question bank: 5 questions')");
+    await waitFor("!!document.querySelector('#viewbank')");
+    assert.equal(await ev("document.querySelectorAll('.qedit').length"), 0, 'list hidden until asked');
+    await ev("document.querySelector('#viewbank').click();true");
     assert.equal(await ev("document.querySelectorAll('.qedit').length"), 5);
     assert.equal(await ev("document.querySelectorAll('.qedit .chip.sent').length"), 5, 'all five show their answer');
 
     // --- corrections after candidates have taken an exam (the locked, live one) ---
     await go(`#/admin/exam/${eid}/questions`);
-    await waitFor("document.body.innerText.includes('Award full marks to every candidate')");
-    const lk = await ev('document.body.innerText');
-    assert.ok(lk.includes('Only the admin can still correct'), 'explains that only the admin can correct');
-    assert.equal(await ev("document.querySelector('.qedit [data-text]').readOnly"), true, 'question text stays locked');
+    await waitFor("!!document.querySelector('#viewbank')");
+    await ev("document.querySelector('#viewbank').click();true");
+    await waitFor("document.body.innerText.includes('Add marks')");
+    assert.equal(await ev("document.querySelectorAll('.qedit [data-text], .qedit [data-marks], .qedit input[type=radio]').length"), 0, 'nothing is editable except Add marks');
     await ev("var c=document.querySelector('.qedit');c.querySelector('[data-grace]').click();c.querySelector('[data-score]').click();true");
     await waitFor("!!document.querySelector('#cfm')");
     assert.match(await ev("document.querySelector('.overlay').innerText"), /recalculated/);
@@ -215,7 +214,8 @@ const api = async (m, u, body) => {
     await ev("document.querySelector('#cfm').click();true");
     await sleep(1200);
     if (await ev("!!document.querySelector('#cfm')")) await ev("document.querySelector('.overlay [data-close]').click();true");   // decline re-sending e-mails
-    await waitFor("document.body.innerText.includes('Corrections made after candidates started')");
+    await waitFor("document.body.innerText.includes('Marks added after candidates started')");
+    await ev("document.querySelector('#changesbox details').open = true;true");
     assert.ok((await ev('document.body.innerText')).includes('awarded to every candidate'), 'logged');
     await shot('18-question-corrections');
 

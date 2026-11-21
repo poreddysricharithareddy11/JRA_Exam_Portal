@@ -6,18 +6,26 @@
 /* ------------------------------------------------------------------ */
 function questionsTab(box, id, d) {
   const { questions, locked, exam } = d;
+  const published = !!exam.published;
   const pool = questions.length;
   const per = exam.questions_per_attempt && exam.questions_per_attempt < pool ? exam.questions_per_attempt : pool;
   const missing = questions.filter((q) => q.correct_index == null && !q.grace).length;
   const graceCount = questions.filter((q) => q.grace).length;
   let filter = 'all', search = '';
+  let open = !published && missing > 0;     // the list stays hidden until the admin asks for it (or answers are missing)
+  const info = pool ? `<span class="chip">${pool} question${pool === 1 ? '' : 's'}</span> <span class="mute small">${exam.num_sets} set${exam.num_sets === 1 ? '' : 's'} × ${per}</span>${graceCount ? ` <span class="chip" style="background:var(--warn-l);color:var(--warn)">${graceCount} awarded to all</span>` : ''}` : '';
+  const pdfBtn = (primary) => (pool ? `<a class="btn ${primary ? 'primary' : ''}" href="/api/admin/exams/${id}/questions.pdf">⬇ Download PDF</a>` : '');
 
-  box.innerHTML = `
-    ${pool ? `<div class="alert info">📚 <b>Question bank: ${pool} questions</b> · ${exam.num_sets} set${exam.num_sets === 1 ? '' : 's'} × ${per < pool ? per : 'all'} questions. Each candidate gets one set in their own order.
-      ${exam.questions_per_attempt && exam.questions_per_attempt > pool ? '<b style="color:var(--bad)">“Questions per candidate” is more than the bank size.</b>' : ''}</div>` : ''}
-    ${pool && missing ? `<div class="alert warn">${missing} of ${pool} questions have no answer — choose them below to publish.</div>` : ''}
-    ${locked ? `<div class="alert info">🔒 <b>${d.attempt_count} candidate${d.attempt_count === 1 ? '' : 's'} started.</b> Text, options and sets are locked. Only the admin can still correct an answer or marks, or <b>award marks to everyone</b>; results are recalculated.</div>` : `
-    <div class="card"><h3>Upload question bank</h3>
+  box.innerHTML = published ? `
+    <div class="card">
+      <div class="row"><div><b>Question bank</b> ${info}</div>
+        <div class="right row">${pool ? '<button class="btn" id="viewbank">View question bank</button>' : ''}${pdfBtn(true)}</div></div>
+      <p class="small mute" style="margin:8px 0 0">This exam is published, so the questions and answers are locked. If a question was faulty, open the question bank and tick <b>Add marks</b> to give its marks to every candidate.</p>
+    </div>
+    <div id="changesbox"></div>
+    <div id="qs" class="hidden"></div>` : `
+    ${pool && missing ? `<div class="alert warn">${missing} of ${pool} questions have no answer — open the question bank and choose them to publish.</div>` : ''}
+    ${locked ? `<div class="alert info">🔒 Candidates have already started, so the questions are locked.</div>` : `<div class="card"><h3>Upload question bank</h3>
       <p class="small mute">PDF, Word, text, or a scan/photo (PNG, JPG). Questions and any answers in the file are read; you review them before saving.</p>
       <form id="uq"><div class="row" style="align-items:flex-end">
         <div class="field grow" style="margin:0;min-width:260px"><label class="f">Question bank file</label><input type="file" name="file" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg"></div>
@@ -25,21 +33,27 @@ function questionsTab(box, id, d) {
         <details class="mt"><summary class="small mute" style="cursor:pointer">…or paste the questions as text</summary>
           <textarea name="text" rows="5" placeholder="1. Capital of India?&#10;A) Mumbai&#10;B) New Delhi&#10;C) Kolkata&#10;D) Chennai&#10;Answer: B" style="margin-top:8px"></textarea></details>
         ${pool ? `<p class="small mute" style="margin:12px 0 0">Uploading replaces the current ${pool} questions.</p>` : ''}</form></div>`}
-    ${pool ? `<details class="card mt" id="keybox"><summary style="cursor:pointer"><b>Answer key</b> <span class="mute small">(question → answer)</span></summary>
-      <div class="keystrip">${questions.map((q, i) => `<span class="${q.correct_index == null && !q.grace ? 'x' : ''}">${i + 1}<i>→</i><b>${q.grace ? '★' : q.correct_index == null ? '?' : L[q.correct_index]}</b></span>`).join('')}</div>
-      ${graceCount ? '<p class="small mute" style="margin:8px 0 0">★ = marks awarded to every candidate</p>' : ''}</details>` : ''}
     <div id="setsbox"></div>
     <div id="changesbox"></div>
-    <div class="sec-title"><h2>Question bank</h2><span class="chip">${pool}</span>
-      ${graceCount ? `<span class="chip" style="background:var(--warn-l);color:var(--warn)">${graceCount} awarded to all</span>` : ''}
-      <div class="right row">
-        ${pool > 6 ? '<input type="text" id="qsearch" placeholder="Search questions…" style="width:210px">' : ''}
-        ${pool && missing ? '<button class="pill" id="onlymiss">Only without answer</button>' : ''}
-        ${!locked && pool ? '<button class="btn sm" id="addq">+ Add question</button>' : ''}</div></div>
-    <div id="qs"></div>`;
+    ${pool ? `<div class="card mt"><div class="row"><div><b>Question bank</b> ${info}</div>
+        <div class="right row"><button class="btn" id="viewbank">View question bank</button>${pdfBtn(false)}${!locked ? '<button class="btn sm" id="addq">+ Add question</button>' : ''}</div></div>
+      <div class="row mt hidden" id="tools">${pool > 6 ? '<input type="text" id="qsearch" placeholder="Search questions…" style="width:210px">' : ''}${missing ? '<button class="pill" id="onlymiss">Only without answer</button>' : ''}</div></div>` : ''}
+    <div id="qs" class="hidden"></div>`;
+
+  /* ---- show / hide the question list ---- */
+  const vb = $('#viewbank', box);
+  function setOpen(v) {
+    open = v;
+    $('#qs', box).classList.toggle('hidden', !open);
+    $('#tools', box)?.classList.toggle('hidden', !open);
+    if (vb) vb.textContent = open ? 'Hide question bank' : 'View question bank';
+    if (open) drawList();
+  }
+  if (vb) vb.onclick = () => setOpen(!open);
+
 
   /* ---- upload ---- */
-  if (!locked) {
+  if (!locked && !published) {
     $('#uq', box).onsubmit = async (ev) => {
       ev.preventDefault();
       const fd = new FormData(ev.target);
@@ -59,15 +73,16 @@ function questionsTab(box, id, d) {
   /* ---- generated sets ---- */
   async function drawSets() {
     const sb = $('#setsbox', box);
-    if (!pool) { sb.innerHTML = ''; return; }
+    if (!sb) return;
+    if (!pool || published) { sb.innerHTML = ''; return; }
     let s; try { s = await api('GET', `/api/admin/exams/${id}/sets`); } catch (_) { return; }
-    sb.innerHTML = `<div class="card mt"><div class="row mb"><h3 style="margin:0">🎲 Question sets</h3>
+    sb.innerHTML = `<details class="card mt"><summary style="cursor:pointer"><b>Question sets</b> <span class="mute small">(view)</span></summary><div class="row mb mt">
         <span class="chip">${s.num_sets} set${s.num_sets === 1 ? '' : 's'} × ${s.per_candidate} questions</span>
         ${!locked ? `<button class="btn sm right" id="regen">${s.sets.length ? '🔀 Shuffle sets again' : 'Generate sets now'}</button>` : ''}</div>
       ${s.sets.length ? `<div class="tw"><table><thead><tr><th>Set</th><th>Questions</th><th>Which questions from the bank</th></tr></thead><tbody>
         ${s.sets.map((x) => `<tr><td><b>Set ${x.set_no}</b></td><td>${x.count}</td><td class="small mute" style="max-width:560px">${x.questions.map((n) => 'Q' + n).join(', ')}</td></tr>`).join('')}</tbody></table></div>
         <p class="small mute" style="margin:10px 0 0">Sets are given to candidates in rotation, each in their own order.</p>`
-        : '<p class="mute small" style="margin:0">The sets are generated automatically when you publish the exam. Use “Generate sets now” to preview them.</p>'}</div>`;
+        : '<p class="mute small" style="margin:0">The sets are generated automatically when you publish the exam. Use “Generate sets now” to preview them.</p>'}</details>`;
     $('#regen', sb)?.addEventListener('click', async () => {
       try { await api('POST', `/api/admin/exams/${id}/sets/regenerate`); toast('Sets generated', 'ok'); drawSets(); } catch (e) { fail(e); }
     });
@@ -78,9 +93,9 @@ function questionsTab(box, id, d) {
   if (locked) {
     api('GET', `/api/admin/exams/${id}/changes`).then(({ changes }) => {
       if (!changes.length) return;
-      $('#changesbox', box).innerHTML = `<div class="card mt"><h3>📝 Corrections made after candidates started</h3><div class="tw"><table>
+      $('#changesbox', box).innerHTML = `<details class="card mt"><summary style="cursor:pointer"><b>Marks added after candidates started</b> <span class="mute small">(view)</span></summary><div class="tw mt"><table>
         <thead><tr><th>When</th><th>By</th><th>Change</th><th>Results updated</th></tr></thead><tbody>
-        ${changes.map((c) => `<tr><td class="small">${fmtDT(c.created_at)}</td><td>${esc(c.admin)}</td><td>${esc(c.summary)}</td><td>${c.rescored}</td></tr>`).join('')}</tbody></table></div></div>`;
+        ${changes.map((c) => `<tr><td class="small">${fmtDT(c.created_at)}</td><td>${esc(c.admin)}</td><td>${esc(c.summary)}</td><td>${c.rescored}</td></tr>`).join('')}</tbody></table></div></details>`;
     }).catch(() => {});
   }
 
@@ -89,7 +104,7 @@ function questionsTab(box, id, d) {
     const rows = questions.map((q, i) => ({ q, no: i + 1 })).filter(({ q, no }) =>
       (filter === 'all' || (q.correct_index == null && !q.grace)) && (!search || (`q${no} ${q.text} ${q.options.join(' ')}`).toLowerCase().includes(search)));
     $('#qs', box).innerHTML = pool
-      ? (rows.length ? rows.map(({ q, no }) => qCard(q, locked, no)).join('') : '<div class="card mute" style="text-align:center;padding:28px">No questions match.</div>')
+      ? (rows.length ? rows.map(({ q, no }) => (published ? qCardView(q, no) : qCard(q, locked, no))).join('') : '<div class="card mute" style="text-align:center;padding:28px">No questions match.</div>')
       : '<div class="card mute" style="text-align:center;padding:36px">No questions yet. Upload a question bank above.</div>';
     $$('.qedit', box).forEach((card) => wireCard(card));
   }
@@ -110,7 +125,7 @@ function questionsTab(box, id, d) {
     });
     $('[data-score]', card)?.addEventListener('click', async () => {
       const sel = $('input[type=radio]:checked', card);
-      const body = { correct_index: sel ? Number(sel.value) : q.correct_index, marks: Number($('[data-marks]', card).value), grace: $('[data-grace]', card)?.checked ? 1 : 0 };
+      const body = { correct_index: sel ? Number(sel.value) : q.correct_index, marks: $('[data-marks]', card) ? Number($('[data-marks]', card).value) : q.marks, grace: $('[data-grace]', card)?.checked ? 1 : 0 };
       const lines = [];
       if (body.correct_index !== q.correct_index) lines.push(`Correct answer: ${q.correct_index == null ? 'none' : L[q.correct_index]} → ${L[body.correct_index]}`);
       if (body.marks !== q.marks) lines.push(`Marks: ${q.marks} → ${body.marks}`);
@@ -131,7 +146,20 @@ function questionsTab(box, id, d) {
   }
   $('#qsearch', box)?.addEventListener('input', (e) => { search = e.target.value.toLowerCase(); drawList(); });
   $('#onlymiss', box)?.addEventListener('click', (e) => { filter = filter === 'all' ? 'missing' : 'all'; e.target.classList.toggle('on', filter === 'missing'); drawList(); });
-  drawList();
+  setOpen(open);
+}
+
+/** One question of a published exam: read-only, with only "Add marks" (award to every candidate) available. */
+function qCardView(q, no) {
+  const status = q.grace ? '<span class="chip" style="background:var(--warn-l);color:var(--warn)">Awarded to all</span>'
+    : q.correct_index == null ? '<span class="chip failed">No answer</span>' : `<span class="chip sent">Answer ${L[q.correct_index]}</span>`;
+  return `<div class="qedit" data-id="${q.id}">
+    <div class="row mb"><b>Q${no}</b>${status}<span class="right small mute">${q.marks} mark${q.marks === 1 ? '' : 's'}</span></div>
+    <p style="margin:0 0 8px;white-space:pre-wrap">${esc(q.text)}</p>
+    <div>${q.options.map((o, i) => `<div class="opt ${q.correct_index === i ? 'right-ans' : ''}"><span>${L[i]}</span><span>${esc(o)}</span></div>`).join('')}</div>
+    <label class="row mt" style="cursor:pointer;gap:10px"><input type="checkbox" data-grace ${q.grace ? 'checked' : ''}><span><b>Add marks</b> <span class="small mute">— give this question's marks to every candidate (use it if the question was wrong or unclear)</span></span></label>
+    <div class="row mt"><button class="btn sm primary" data-score>Save</button></div>
+  </div>`;
 }
 
 /** One question in the saved bank. */

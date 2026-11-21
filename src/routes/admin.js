@@ -7,7 +7,7 @@ const db = require('../db');
 const auth = require('../auth');
 const svc = require('../service');
 const mailer = require('../mailer');
-const { buildResultPdf } = require('../pdf');
+const { buildResultPdf, buildBankPdf } = require('../pdf');
 const { extractDocument, parseQuestions, parseAnswerKey } = require('../parser');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -323,6 +323,10 @@ router.patch('/questions/:qid/scoring', async (req, res) => {
   const started = await hasAttempts(q.exam_id);
   if (started && next.correct_index === null && !next.grace) return bad(res, 'Candidates have already taken this exam, so the question must keep a correct answer (or be awarded to everyone).');
 
+  const ex = await db.prepare('SELECT published FROM exams WHERE id=?').get(q.exam_id);
+  if (ex && ex.published && (next.correct_index !== q.correct_index || next.marks !== q.marks))
+    return bad(res, 'This exam is published, so the answer key and marks are locked. You can only add marks by awarding the question to every candidate.', 409);
+
   const num = (await db.prepare('SELECT COUNT(*) n FROM questions WHERE exam_id=? AND (set_name<?  OR (set_name=? AND position<=?))').get(q.exam_id, q.set_name, q.set_name, q.position)).n;
   const L = (i) => (i == null ? 'none' : 'ABCDEFGH'[i]);
   const parts = [];
@@ -340,6 +344,16 @@ router.patch('/questions/:qid/scoring', async (req, res) => {
   })();
   res.json({ ok: true, rescored: out.changed, attempts: out.total, result_changes: out.flipped, summary: parts.join('; ') });
 });
+
+// PDF of the whole question bank with the correct answers marked.
+router.get('/exams/:id/questions.pdf', wrap(async (req, res) => {
+  const e = await loadExam(req, res); if (!e) return;
+  const qs = (await db.prepare('SELECT * FROM questions WHERE exam_id=? ORDER BY set_name, position').all(e.id)).map(svc.parseQ);
+  if (!qs.length) return bad(res, 'This exam has no questions yet.', 404);
+  const pdf = await buildBankPdf(e, qs);
+  res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="question-bank-exam-' + e.id + '.pdf"' });
+  res.send(pdf);
+}));
 
 router.get('/exams/:id/changes', async (req, res) => {
   const e = await loadExam(req, res); if (!e) return;

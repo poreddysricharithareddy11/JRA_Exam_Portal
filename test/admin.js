@@ -92,52 +92,51 @@ const wait = async (cond, ms = 12000) => { const t = Date.now(); while (Date.now
     assert.equal((await call(admin, 'PATCH', `/api/admin/questions/${qs[1].id}/scoring`, { marks: 0 })).status, 400, 'invalid marks rejected');
     assert.equal((await call(admin, 'PATCH', `/api/admin/questions/${qs[1].id}/scoring`, { correct_index: null })).status, 400, 'cannot leave a started exam without an answer');
 
-    /* ===== 1) the key for Q2 was wrong: B -> A. alice (picked A) gains; bob (picked B) loses ===== */
+    /* ===== published exam: the answer key and marks are locked; only "add marks" (award to everyone) is allowed ===== */
     let r = await call(admin, 'PATCH', `/api/admin/questions/${qs[1].id}/scoring`, { correct_index: 0 });
-    assert.equal(r.status, 200); assert.equal(r.data.rescored, 2); assert.equal(r.data.attempts, 2);
-    a = await score('alice'); b = await score('bob');
-    assert.deepEqual([a.score, a.correct, a.wrong], [6, 3, 0], 'alice: 2+2+2 = 6 (no penalty left)');
-    assert.deepEqual([b.score, b.correct, b.wrong], [2, 2, 2], 'bob: Q1 right +2, Q2 now wrong -1, Q3 wrong -1, Q4 right +2 = 2');
-    assert.equal(b.score, 2, 'bob 2 / 8'); assert.equal(b.passed, 0, 'bob now fails'); assert.equal(a.passed, 1, 'alice now passes');
-    assert.equal(r.data.result_changes, 2, 'both pass/fail outcomes flipped');
-
-    /* ===== 2) marks for Q1 raised to 4 ===== */
+    assert.equal(r.status, 409, 'answer key is locked once published');
     r = await call(admin, 'PATCH', `/api/admin/questions/${qs[0].id}/scoring`, { marks: 4 });
-    assert.equal(r.data.rescored, 2);
+    assert.equal(r.status, 409, 'marks are locked once published');
     a = await score('alice'); b = await score('bob');
-    assert.deepEqual([a.score, a.total], [8, 10]); assert.deepEqual([b.score, b.total], [4, 10]);
+    assert.deepEqual([a.score, b.score], [3, 5], 'nothing was recalculated');
+
+    /* ===== the question bank PDF (admin only) ===== */
+    const bankPdf = await fetch(`${BASE}/api/admin/exams/${eid}/questions.pdf`, { headers: { cookie: admin.cookie } });
+    assert.equal(bankPdf.status, 200); assert.match(bankPdf.headers.get('content-type'), /pdf/);
+    assert.equal(Buffer.from(await bankPdf.arrayBuffer()).subarray(0, 4).toString(), '%PDF');
+    assert.equal((await fetch(`${BASE}/api/admin/exams/${eid}/questions.pdf`, { headers: { cookie: people.alice.c.cookie } })).status, 403, 'candidates cannot download the bank');
 
     /* ===== 3) Q3 was a faulty question: award its marks to everyone (alice blank/right, bob wrong -> no penalty) ===== */
     r = await call(admin, 'PATCH', `/api/admin/questions/${qs[2].id}/scoring`, { grace: true });
     assert.equal(r.data.rescored, 1, 'only bob changes (alice already had Q3 right)');
     a = await score('alice'); b = await score('bob');
-    assert.equal(a.score, 8, 'alice already had Q3 right: unchanged'); assert.equal(b.score, 4 + 1 + 2, 'bob: penalty removed (+1) and full marks (+2) -> 7');
+    assert.equal(a.score, 3, 'alice already had Q3 right: unchanged'); assert.equal(b.score, 8, 'bob: penalty removed (+1) and full marks (+2) -> 8');
     // Q4 unanswered by alice: grace on it gives her the marks too
     r = await call(admin, 'PATCH', `/api/admin/questions/${qs[3].id}/scoring`, { grace: true });
-    a = await score('alice'); assert.equal(a.score, 10, 'unanswered question awarded to everyone: alice 10/10');
+    a = await score('alice'); assert.equal(a.score, 5, 'unanswered question awarded to everyone: alice 5/8');
     assert.equal(a.unanswered, 0);
     // the candidate's own review marks it as awarded to all and shows the right option
     const rv = (await call(people.alice.c, 'GET', `/api/user/attempts/${people.alice.att}/result`)).data;
     assert.equal(rv.questions.filter((q) => q.result === 'bonus').length, 2, 'two questions shown as awarded to all');
-    assert.ok(rv.attempt.score === 10);
+    assert.ok(rv.attempt.score === 5);
     // PDF still builds
     const pdf = await fetch(`${BASE}/api/user/attempts/${people.alice.att}/pdf`, { headers: { cookie: people.alice.c.cookie } });
     assert.equal((await pdf.arrayBuffer()).byteLength > 1000, true);
     // removing the award restores scoring
     r = await call(admin, 'PATCH', `/api/admin/questions/${qs[3].id}/scoring`, { grace: false });
-    a = await score('alice'); assert.equal(a.score, 8, 'back to 8 / 10');
+    a = await score('alice'); assert.equal(a.score, 3, 'back to 3 / 8');
     // no-op change reports unchanged and does not log
     r = await call(admin, 'PATCH', `/api/admin/questions/${qs[3].id}/scoring`, { grace: false });
     assert.equal(r.data.unchanged, true);
 
     /* ===== change log ===== */
     const log = (await call(admin, 'GET', `/api/admin/exams/${eid}/changes`)).data.changes;
-    assert.equal(log.length, 5, 'every real change recorded'); assert.ok(log.every((c) => c.admin === 'adm'));
-    assert.ok(log.some((c) => /correct answer B → A/.test(c.summary)) && log.some((c) => /marks 2 → 4/.test(c.summary)) && log.some((c) => /awarded to every candidate/.test(c.summary)));
+    assert.equal(log.length, 3, 'every real change recorded'); assert.ok(log.every((c) => c.admin === 'adm'));
+    assert.ok(log.some((c) => /awarded to every candidate/.test(c.summary)));
 
     /* ===== results table and CSV reflect the recalculation ===== */
     const res = (await call(admin, 'GET', `/api/admin/exams/${eid}/results`)).data;
-    assert.equal(res.results.find((x) => x.username === 'alice').score, 8);
+    assert.equal(res.results.find((x) => x.username === 'alice').score, 3);
     assert.equal(res.summary.submitted, 2);
 
     // with e-mail configured the corrected results can be re-sent to everyone, and the stats say it is configured

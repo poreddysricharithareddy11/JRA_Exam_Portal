@@ -86,4 +86,57 @@ async function buildResultPdf(attemptId, preloaded) {
   });
 }
 
-module.exports = { buildResultPdf };
+
+/** PDF of an exam's whole question bank with the correct answers marked (for the admin). */
+async function buildBankPdf(exam, questions) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
+    const chunks = [];
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    const L = 40, R = doc.page.width - 40, CW = R - L;
+
+    let logo = null; try { logo = branding.logoBuffer(); } catch (_) { /* no logo: skip */ }
+    const watermark = () => { if (!logo) return; doc.save(); doc.opacity(0.07); doc.image(logo, (doc.page.width - 380) / 2, (doc.page.height - 380) / 2, { fit: [380, 380] }); doc.restore(); };
+    doc.on('pageAdded', watermark);
+    watermark();
+
+    doc.fillColor(INK).font('Helvetica-Bold').fontSize(17).text(exam.name, L, 40, { width: CW });
+    doc.font('Helvetica').fontSize(9.5).fillColor(MUTE)
+      .text(`${cfg.PORTAL_NAME}  |  Question bank with correct answers  |  ${questions.length} question${questions.length === 1 ? '' : 's'}`, L, doc.y + 2, { width: CW });
+    doc.moveDown(0.4);
+    doc.moveTo(L, doc.y).lineTo(R, doc.y).lineWidth(0.7).strokeColor('#d1d5db').stroke();
+    doc.moveDown(0.8);
+
+    questions.forEach((q, n) => {
+      if (doc.y > doc.page.height - 150) doc.addPage();
+      doc.font('Helvetica-Bold').fontSize(10.5).fillColor(INK).text(`Q${n + 1}. ${q.text}`, L, doc.y, { width: CW - 90 });
+      const qy = doc.y;
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(q.grace ? '#b45309' : MUTE)
+        .text(q.grace ? `Awarded to all (${q.marks})` : `${q.marks} mark${q.marks === 1 ? '' : 's'}`, R - 90, qy - 13, { width: 90, align: 'right' });
+      doc.y = qy + 3;
+      q.options.forEach((opt, i) => {
+        if (doc.y > doc.page.height - 70) doc.addPage();
+        const ok = i === q.correct_index;
+        doc.font(ok ? 'Helvetica-Bold' : 'Helvetica').fontSize(10).fillColor(ok ? GREEN : INK)
+          .text(`${LETTERS[i]}.  ${opt}${ok ? '   (Correct answer)' : ''}`, L + 16, doc.y, { width: CW - 16 });
+      });
+      if (q.correct_index == null) doc.font('Helvetica-Oblique').fontSize(9).fillColor(RED).text('No correct answer set', L + 16, doc.y);
+      doc.moveDown(0.9);
+    });
+
+    const pages = doc.bufferedPageRange();
+    for (let i = 0; i < pages.count; i++) {
+      doc.switchToPage(i);
+      const keep = doc.page.margins.bottom;
+      doc.page.margins.bottom = 0;
+      doc.font('Helvetica').fontSize(8).fillColor(MUTE)
+        .text(`${cfg.PORTAL_NAME}  |  Page ${i + 1} of ${pages.count}`, L, doc.page.height - 30, { width: CW, align: 'center', lineBreak: false });
+      doc.page.margins.bottom = keep;
+    }
+    doc.end();
+  });
+}
+
+module.exports = { buildResultPdf, buildBankPdf };
