@@ -68,7 +68,7 @@ const decode = (raw) => raw.replace(/=\r\n/g, '').replace(/=([0-9A-F]{2})/g, (_,
 
     // 1) refuses politely when e-mail isn't configured
     let r = await call('POST', `/api/admin/exams/${eid}/notify`, { mode: 'all', kind: 'invite' });
-    assert.equal(r.status, 400); assert.match(r.data.error, /not configured/i);
+    assert.equal(r.status, 400); assert.match(r.data.error, /not set up/i);
     assert.equal((await call('GET', '/api/admin/stats')).data.smtp_configured, false);
 
     // restart with SMTP pointing at the fake server
