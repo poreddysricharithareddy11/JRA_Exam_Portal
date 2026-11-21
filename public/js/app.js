@@ -221,3 +221,27 @@ async function route() {
 }
 window.addEventListener('hashchange', route);
 window.addEventListener('load', route);
+
+/* Swipe between tabs on touch screens: swipe RIGHT = next tab, swipe LEFT = previous tab.
+   Ignored while typing, inside tables that scroll sideways, on the tab bar itself, in dialogs, and on the exam screen (no tabs there). */
+(() => {
+  let sx = 0, sy = 0, st = 0, ok = false;
+  const skip = (el) => !el || !el.closest || !!el.closest('.tw, .tabs, input, textarea, select, .overlay, .modal, [data-noswipe]');
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) { ok = false; return; }
+    const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now(); ok = !skip(e.target);
+  }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (!ok) return;
+    ok = false;
+    const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.8 || Date.now() - st > 700) return;   // a clear, quick, mostly-horizontal swipe
+    const bar = document.querySelector('.tabs');
+    if (!bar) return;
+    const items = [...bar.querySelectorAll('a')];
+    const i = items.findIndex((a) => a.classList.contains('on'));
+    if (i < 0) return;
+    const target = items[i + (dx > 0 ? 1 : -1)];
+    if (target) target.click();
+  }, { passive: true });
+})();

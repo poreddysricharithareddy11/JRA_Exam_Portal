@@ -99,7 +99,7 @@ async function liveTab(box, id) {
     writing: { head: ['Candidate', 'Progress', 'Time left', 'Warnings'], row: (p, t) => {
       const left = Date.parse(p.deadline_at) - t, pct = p.total ? Math.round((p.answered / p.total) * 100) : 0;
       return `<tr>${nameCell(p)}<td style="min-width:170px"><div class="prog"><div style="width:${pct}%"></div></div><div class="small mute">${p.answered}${p.total ? ' / ' + p.total : ''} answered</div></td>
-        <td class="mono" style="color:var(--${left < 300000 ? 'bad' : 'ink'})">${fmtCountdown(Math.max(0, left))}</td><td>${warnChip(p)}</td></tr>`;
+        <td class="mono" data-left="${Date.parse(p.deadline_at)}" style="color:var(--${left < 300000 ? 'bad' : 'ink'})">${fmtCountdown(Math.max(0, left))}</td><td>${warnChip(p)}</td></tr>`;
     } },
     submitted: { head: ['Candidate', 'Score', 'Result', 'Submitted', 'Warnings'], row: (p) => `<tr>${nameCell(p)}
       <td><b>${p.score ?? '-'} / ${p.max ?? '-'}</b> <span class="small mute">(${p.percent ?? 0}%)</span></td>
@@ -122,15 +122,31 @@ async function liveTab(box, id) {
       <div class="tw"><table><thead><tr>${c.head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>
       ${list.length ? list.map((p) => c.row(p, t)).join('') : `<tr><td colspan="${c.head.length}" class="mute" style="text-align:center;padding:30px">${EMPTY[filter]}</td></tr>`}
       </tbody></table></div></div>`;
-    $$('.tile.pick', box).forEach((el) => {
-      const go = () => { filter = el.dataset.f; paint(); };
-      el.onclick = go; el.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } };
-    });
   };
+  // Only the countdown cells change every second, so update them in place. (Redrawing the whole page every second replaced
+  // the tile under the pointer between press and release, which made the first click get lost.)
+  const tickTimes = () => {
+    const t = Date.now() + off;
+    $$('[data-left]', box).forEach((c) => { const left = +c.dataset.left - t; c.textContent = fmtCountdown(Math.max(0, left)); c.style.color = left < 300000 ? 'var(--bad)' : 'var(--ink)'; });
+  };
+  // One handler on the stable container: it reacts on PRESS (so it never depends on the tile surviving until release),
+  // and on click / keyboard as well.
+  const pick = (ev) => {
+    const el = ev.target.closest && ev.target.closest('.tile.pick');
+    if (!el || el.dataset.f === filter) return;
+    filter = el.dataset.f; paint();
+  };
+  box.onpointerdown = pick; box.onclick = pick;
+  box.onkeydown = (ev) => { if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.closest && ev.target.closest('.tile.pick')) { ev.preventDefault(); pick(ev); } };
+  let last = '';
   async function load() {
-    try { d = await api('GET', `/api/admin/exams/${id}/live`); off = Date.parse(d.now) - Date.now(); paint(); } catch (_) { /* retry next tick */ }
+    try {
+      d = await api('GET', `/api/admin/exams/${id}/live`); off = Date.parse(d.now) - Date.now();
+      const sig = JSON.stringify(d.people);          // redraw only when something actually changed
+      if (sig !== last) { last = sig; paint(); }
+    } catch (_) { /* retry next tick */ }
   }
   await load();
-  const a = setInterval(() => { if (!document.hidden) load(); }, 4000), b = setInterval(paint, 1000);
-  JEP.cleanup = () => { clearInterval(a); clearInterval(b); };
+  const a = setInterval(() => { if (!document.hidden) load(); }, 4000), b = setInterval(tickTimes, 1000);
+  JEP.cleanup = () => { clearInterval(a); clearInterval(b); box.onpointerdown = box.onclick = box.onkeydown = null; };
 }

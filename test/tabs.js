@@ -30,13 +30,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       let id = 0; const pending = new Map();
       ws.onmessage = (m) => { const msg = JSON.parse(m.data); if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); } };
       const send = (method, params = {}) => new Promise((res) => { const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
-      await send('Page.enable'); await send('Runtime.enable');
+      await send('Page.enable'); await send('Runtime.enable'); await send('Emulation.setTouchEmulationEnabled', { enabled: true });
+      const touch = (type, x, y) => send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
       const ev = async (expr) => { const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true }); if (r.result.exceptionDetails) throw new Error('eval failed: ' + expr); return r.result.result.value; };
       const waitFor = async (expr, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await ev(expr)) return true; } catch (_) { /* page loading */ } await sleep(150); } throw new Error('timeout waiting for: ' + expr); };
       return {
         go: async (hash) => { await send('Page.navigate', { url: BASE + '/' + hash }); await sleep(300); },
         reload: async () => { await send('Page.reload'); await sleep(400); },
         ev, waitFor,
+        swipe: async (x1, y1, x2, y2) => { await fetch(`http://127.0.0.1:${DBG}/json/activate/${t.id}`); await sleep(150);   // Chrome only delivers input to the visible tab
+          await touch('touchStart', x1, y1); await touch('touchMove', (x1 + x2) / 2, (y1 + y2) / 2); await touch('touchMove', x2, y2); await touch('touchEnd'); await sleep(350); },
         login: async (u, p) => { await waitFor("!!document.querySelector('#lf')"); await ev(`document.querySelector('#u').value=${JSON.stringify(u)};document.querySelector('#p').value=${JSON.stringify(p)};document.querySelector('#lf').requestSubmit();true`); },
       };
     };
@@ -55,6 +58,32 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await B.waitFor("document.body.innerText.includes('Casey') && location.hash.startsWith('#/user')");
     assert.ok(!(await A.ev('document.body.innerText')).includes('Casey'), 'admin tab did not turn into the candidate');
     assert.ok(!(await B.ev('document.body.innerText')).includes('Administrator'), 'candidate tab did not turn into the admin');
+
+    // swipe between tabs: RIGHT = next tab, LEFT = previous tab (candidate dashboard)
+    const activeTab = () => B.ev("document.querySelector('.utabs a.on')?.dataset.tab");
+    assert.equal(await activeTab(), 'upcoming');
+    await B.swipe(200, 520, 420, 525);                       // swipe right -> next tab (Completed)
+    assert.equal(await activeTab(), 'completed', 'swipe right goes to the next tab');
+    await B.swipe(420, 520, 200, 525);                       // swipe left -> previous tab (Upcoming & live)
+    assert.equal(await activeTab(), 'upcoming', 'swipe left goes back to the previous tab');
+    await B.swipe(420, 520, 200, 525);                       // already on the first tab: nothing happens
+    assert.equal(await activeTab(), 'upcoming');
+    await B.swipe(300, 400, 330, 700);                       // a mostly-vertical drag (scrolling) must not switch tabs
+    assert.equal(await activeTab(), 'upcoming', 'scrolling is not a swipe');
+
+    // the same on the admin's exam tabs
+    const eid = (await (await fetch(BASE + '/api/admin/exams', { method: 'POST', headers: { 'content-type': 'application/json', cookie: ck }, body: JSON.stringify({ name: 'Swipe', duration_min: 30, pass_percent: 40, start_at: new Date(Date.now() + 36e5).toISOString(), end_at: new Date(Date.now() + 72e5).toISOString() }) })).json()).id;
+    await A.go(`#/admin/exam/${eid}/questions`);
+    await A.waitFor("!!document.querySelector('.tabs a.on')");
+    await A.swipe(200, 600, 420, 605);
+    await A.waitFor("location.hash.endsWith('/results')");
+    await A.waitFor("document.querySelector('.tabs a.on')?.getAttribute('href')?.endsWith('/results')");   // results page fully drawn
+    const freeY = await A.ev("(() => { for (let y = 360; y < 690; y += 10) { const e = document.elementFromPoint(300, y); if (e && !e.closest('.tw, .tabs, input, textarea, select, .overlay, .modal, [data-noswipe]')) return y; } return 0; })()");
+    assert.ok(freeY > 0, 'found a plain area of the page to swipe on');
+    await A.swipe(200, freeY, 420, freeY + 5);                       // start on a plain area (tables are ignored on purpose so they can scroll sideways)
+    await A.waitFor("location.hash.endsWith('/invite')");
+    await A.swipe(420, freeY, 200, freeY + 5);
+    await A.waitFor("location.hash.endsWith('/results')");
 
     // a brand-new tab is NOT signed in by the other tabs
     const C = await openTab(); await C.go('');

@@ -141,6 +141,15 @@ const api = async (m, u, body) => {
     await waitFor("document.body.innerText.includes('Rahul Verma')");
     assert.ok((await ev('document.body.innerText')).includes('1 / 5 answered'), 'live progress shown');
     await shot('08-admin-live');
+    // ONE real press on a tile must switch the list, even when the page refreshes while the button is held down
+    // (the old code redrew the tiles every second, so the first click was often lost and a second click was needed)
+    const rc = await ev("(() => { const r = document.querySelector('.tile.pick[data-f=submitted]').getBoundingClientRect(); return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2)]; })()");
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rc[0], y: rc[1], button: 'left', clickCount: 1 });
+    await sleep(1300);
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rc[0], y: rc[1], button: 'left', clickCount: 1 });
+    await waitFor("document.body.innerText.includes('Candidates who have submitted')");
+    await ev("document.querySelector('.tile.pick[data-f=writing]').click();true");
+    await waitFor("document.body.innerText.includes('Candidates writing now')");
     // the tiles are filters: each opens the list of candidates in that state
     assert.equal(await ev("document.querySelectorAll('.tile.pick').length"), 4, 'four clickable tiles');
     await ev("document.querySelector('.tile.pick[data-f=submitted]').click();true");

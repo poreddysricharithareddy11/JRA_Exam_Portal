@@ -250,3 +250,4 @@ body.wm::after{content:'';position:fixed;inset:0;background:var(--logo) center 5
 .empty{display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;padding:44px 20px;background:var(--card);border:1px dashed var(--line);border-radius:14px;color:var(--mute)}
 .empty .big{font-size:2.2rem}.empty b{color:var(--ink);font-size:1.05rem}
 @media(max-width:600px){.ucard .btn{width:100%;justify-content:center}}
+html,body{overscroll-behavior-x:none}
