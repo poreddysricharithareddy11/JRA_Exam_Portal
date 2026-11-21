@@ -453,18 +453,24 @@ router.post('/notifications/:nid/retry', async (req, res) => {
 // Live monitor: who is writing right now, progress, time left, violations.
 router.get('/exams/:id/live', async (req, res) => {
   const e = await loadExam(req, res); if (!e) return;
-  const [rows, counts, cand] = await Promise.all([
-    db.prepare(`SELECT a.id,a.started_at,a.deadline_at,a.violations,a.layout,u.username,u.full_name,
+  // Every candidate with where they are in this exam: not started / writing / submitted.
+  const rows = await db.prepare(`SELECT u.id AS user_id,u.username,u.full_name,u.email,
+      a.id,a.status,a.started_at,a.deadline_at,a.submitted_at,a.submit_reason,a.violations,a.layout,a.score,a.total,a.percent,a.passed,
       (SELECT COUNT(*) FROM answers x WHERE x.attempt_id=a.id AND x.selected_index IS NOT NULL) AS answered
-    FROM attempts a JOIN users u ON u.id=a.user_id WHERE a.exam_id=? AND a.status='in_progress' ORDER BY a.started_at`).all(e.id),
-    db.prepare('SELECT status, COUNT(*) n FROM attempts WHERE exam_id=? GROUP BY status').all(e.id),
-    db.prepare("SELECT COUNT(*) n FROM users WHERE role='user'").get(),
-  ]);
+    FROM users u LEFT JOIN attempts a ON a.user_id=u.id AND a.exam_id=?
+    WHERE u.role='user' ORDER BY u.username`).all(e.id);
   const total = (r) => { try { return JSON.parse(r.layout).length; } catch (_) { return null; } };
+  const people = rows.map((r) => ({
+    user_id: r.user_id, username: r.username, full_name: r.full_name, email: r.email,
+    state: !r.id ? 'not_started' : r.status === 'submitted' ? 'submitted' : 'writing',
+    attempt_id: r.id || null, started_at: r.started_at || null, deadline_at: r.deadline_at || null, submitted_at: r.submitted_at || null,
+    submit_reason: r.submit_reason || null, violations: r.violations || 0, answered: r.answered || 0, total: r.id ? total(r) : null,
+    score: r.score, max: r.total, percent: r.percent, passed: r.passed,
+  }));
   res.json({
-    now: new Date().toISOString(), status: svc.examStatus(e),
-    writing: rows.map((r) => ({ id: r.id, username: r.username, full_name: r.full_name, started_at: r.started_at, deadline_at: r.deadline_at, violations: r.violations, answered: r.answered, total: total(r) })),
-    submitted: (counts.find((c) => c.status === 'submitted') || {}).n || 0, candidates: cand.n,
+    now: new Date().toISOString(), status: svc.examStatus(e), people,
+    writing: people.filter((p) => p.state === 'writing').sort((a, b) => String(a.started_at).localeCompare(String(b.started_at))).map((p) => ({ id: p.attempt_id, ...p })),
+    submitted: people.filter((p) => p.state === 'submitted').length, candidates: people.length,
   });
 });
 

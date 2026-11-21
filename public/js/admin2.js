@@ -84,26 +84,48 @@ async function inviteTab(box, id) {
 /* ------------------------------ live monitor ---------------------------- */
 async function liveTab(box, id) {
   box.innerHTML = '<div class="card mute" style="text-align:center;padding:30px">Loading live data…</div>';
-  let d = null, off = 0;
+  let d = null, off = 0, filter = 'writing';
+  const FILTERS = {
+    writing: { ic: 'g', icon: '✍️', label: 'Writing now', title: 'Candidates writing now', pick: (p) => p.state === 'writing' },
+    submitted: { ic: 'b', icon: '✅', label: 'Submitted', title: 'Candidates who have submitted', pick: (p) => p.state === 'submitted' },
+    not_started: { ic: 'y', icon: '⏳', label: 'Not started', title: 'Candidates who have not started', pick: (p) => p.state === 'not_started' },
+    warnings: { ic: 'r', icon: '⚠️', label: 'With warnings', title: 'Candidates with warnings', pick: (p) => p.violations > 0 },
+  };
+  const how = { manual: 'By candidate', time_up: 'Time up', violation: 'Too many warnings' };
+  const warnChip = (p) => (p.violations ? `<span class="chip failed">${p.violations} warning${p.violations > 1 ? 's' : ''}</span>` : '<span class="chip sent">Clean</span>');
+  const nameCell = (p) => `<td><b>${esc(p.full_name || p.username)}</b><div class="small mute">${esc(p.username)}</div></td>`;
+
+  const COLS = {
+    writing: { head: ['Candidate', 'Progress', 'Time left', 'Warnings'], row: (p, t) => {
+      const left = Date.parse(p.deadline_at) - t, pct = p.total ? Math.round((p.answered / p.total) * 100) : 0;
+      return `<tr>${nameCell(p)}<td style="min-width:170px"><div class="prog"><div style="width:${pct}%"></div></div><div class="small mute">${p.answered}${p.total ? ' / ' + p.total : ''} answered</div></td>
+        <td class="mono" style="color:var(--${left < 300000 ? 'bad' : 'ink'})">${fmtCountdown(Math.max(0, left))}</td><td>${warnChip(p)}</td></tr>`;
+    } },
+    submitted: { head: ['Candidate', 'Score', 'Result', 'Submitted', 'Warnings'], row: (p) => `<tr>${nameCell(p)}
+      <td><b>${p.score ?? '-'} / ${p.max ?? '-'}</b> <span class="small mute">(${p.percent ?? 0}%)</span></td>
+      <td>${p.passed ? '<span class="chip sent">Passed</span>' : '<span class="chip failed">Failed</span>'}</td>
+      <td class="small">${fmtDT(p.submitted_at)}<div class="mute">${how[p.submit_reason] || ''}</div></td><td>${warnChip(p)}</td></tr>` },
+    not_started: { head: ['Candidate', 'E-mail'], row: (p) => `<tr>${nameCell(p)}<td class="small">${p.email ? esc(p.email) : '<span class="chip failed">no e-mail</span>'}</td></tr>` },
+    warnings: { head: ['Candidate', 'Status', 'Warnings'], row: (p) => `<tr>${nameCell(p)}
+      <td>${p.state === 'submitted' ? '<span class="chip sent">Submitted</span>' : '<span class="chip live">Writing</span>'}</td><td>${warnChip(p)}</td></tr>` },
+  };
+  const EMPTY = { writing: 'Nobody is writing this exam right now.', submitted: 'Nobody has submitted yet.', not_started: 'Everyone has started.', warnings: 'No candidate has a warning.' };
+
   const paint = () => {
     if (!d) return;
     const t = Date.now() + off;
-    const notStarted = Math.max(0, d.candidates - d.submitted - d.writing.length);
-    box.innerHTML = `<div class="tiles">
-      <div class="tile"><div class="ic g">✍️</div><div><b>${d.writing.length}</b><span>Writing now</span></div></div>
-      <div class="tile"><div class="ic b">✅</div><div><b>${d.submitted}</b><span>Submitted</span></div></div>
-      <div class="tile"><div class="ic y">⏳</div><div><b>${notStarted}</b><span>Not started</span></div></div>
-      <div class="tile"><div class="ic r">⚠️</div><div><b>${d.writing.filter((w) => w.violations).length}</b><span>With warnings</span></div></div></div>
-      <div class="card mt"><div class="row mb"><h3 style="margin:0"><span class="pulse"></span>Candidates writing now</h3><span class="small mute right">Updates automatically</span></div>
-      <div class="tw"><table><thead><tr><th>Candidate</th><th>Progress</th><th>Time left</th><th>Warnings</th></tr></thead><tbody>
-      ${d.writing.length ? d.writing.map((w) => {
-        const left = Date.parse(w.deadline_at) - t, pct = w.total ? Math.round((w.answered / w.total) * 100) : 0;
-        return `<tr><td><b>${esc(w.full_name || w.username)}</b><div class="small mute">${esc(w.username)}</div></td>
-          <td style="min-width:170px"><div class="prog"><div style="width:${pct}%"></div></div><div class="small mute">${w.answered}${w.total ? ' / ' + w.total : ''} answered</div></td>
-          <td class="mono" style="color:var(--${left < 300000 ? 'bad' : 'ink'})">${fmtCountdown(Math.max(0, left))}</td>
-          <td>${w.violations ? `<span class="chip failed">${w.violations} warning${w.violations > 1 ? 's' : ''}</span>` : '<span class="chip sent">Clean</span>'}</td></tr>`;
-      }).join('') : '<tr><td colspan="4" class="mute" style="text-align:center;padding:30px">Nobody is writing this exam right now.</td></tr>'}
+    const counts = Object.fromEntries(Object.entries(FILTERS).map(([k, f]) => [k, d.people.filter(f.pick).length]));
+    const f = FILTERS[filter], list = d.people.filter(f.pick), c = COLS[filter];
+    box.innerHTML = `<div class="tiles">${Object.entries(FILTERS).map(([k, x]) => `
+      <div class="tile pick ${k === filter ? 'on' : ''}" data-f="${k}" role="button" tabindex="0" title="Show these candidates"><div class="ic ${x.ic}">${x.icon}</div><div><b>${counts[k]}</b><span>${x.label}</span></div></div>`).join('')}</div>
+      <div class="card mt"><div class="row mb"><h3 style="margin:0">${filter === 'writing' ? '<span class="pulse"></span>' : ''}${f.title} <span class="chip">${list.length}</span></h3><span class="small mute right">Updates automatically</span></div>
+      <div class="tw"><table><thead><tr>${c.head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>
+      ${list.length ? list.map((p) => c.row(p, t)).join('') : `<tr><td colspan="${c.head.length}" class="mute" style="text-align:center;padding:30px">${EMPTY[filter]}</td></tr>`}
       </tbody></table></div></div>`;
+    $$('.tile.pick', box).forEach((el) => {
+      const go = () => { filter = el.dataset.f; paint(); };
+      el.onclick = go; el.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } };
+    });
   };
   async function load() {
     try { d = await api('GET', `/api/admin/exams/${id}/live`); off = Date.parse(d.now) - Date.now(); paint(); } catch (_) { /* retry next tick */ }

@@ -136,6 +136,18 @@ const api = async (m, u, body) => {
     await waitFor("document.body.innerText.includes('Rahul Verma')");
     assert.ok((await ev('document.body.innerText')).includes('1 / 5 answered'), 'live progress shown');
     await shot('08-admin-live');
+    // the tiles are filters: each opens the list of candidates in that state
+    assert.equal(await ev("document.querySelectorAll('.tile.pick').length"), 4, 'four clickable tiles');
+    await ev("document.querySelector('.tile.pick[data-f=submitted]').click();true");
+    await waitFor("document.body.innerText.includes('Candidates who have submitted')");
+    const subTxt = await ev('document.body.innerText');
+    assert.ok(subTxt.includes('Priya Sharma') && /Passed|Failed/.test(subTxt) && !subTxt.includes('Rahul Verma'), 'submitted list shows only submitted candidates with results');
+    await ev("document.querySelector('.tile.pick[data-f=not_started]').click();true");
+    await waitFor("document.body.innerText.includes('Candidates who have not started')");
+    const nsTxt = await ev('document.body.innerText');
+    assert.ok(nsTxt.includes('Anita Rao') && !nsTxt.includes('Priya Sharma') && !nsTxt.includes('Rahul Verma'), 'not-started list shows only those candidates');
+    await shot('08b-live-not-started');
+    await ev("document.querySelector('.tile.pick[data-f=writing]').click();true");
     await go(`#/admin/exam/${eid}/results`);
     await waitFor("!!document.querySelector('.hist')");
     await shot('09-admin-results');
