@@ -59,7 +59,8 @@ const bank = (n) => Array.from({ length: n }, (_, i) =>
     const USERS = 25;
     for (let i = 0; i < USERS; i++) {
       const un = 'cand' + i;
-      await admin('POST', '/api/admin/users', { username: un, password: 'secret1', email: `${un}@example.com` });
+      const uid = (await admin('POST', '/api/admin/users', { username: un, password: 'secret1', email: `${un}@example.com` })).data.id;
+      await admin('POST', `/api/admin/exams/${pid}/notify`, { mode: 'selected', user_ids: [uid], kind: 'invite' });   // only invited candidates can start
       const c = client(); await c('POST', '/api/auth/login', { username: un, password: 'secret1', role: 'user' });
       const st = (await c('POST', `/api/user/exams/${pid}/start`)).data;
       assert.equal(st.questions.length, 30, '30 questions per candidate');
@@ -107,6 +108,7 @@ const bank = (n) => Array.from({ length: n }, (_, i) =>
     const fid = r.data.id;
     await upload(fid, bank(30));
     assert.equal((await admin('POST', `/api/admin/exams/${fid}/publish`, { published: true })).status, 200);
+    await admin('POST', `/api/admin/exams/${fid}/notify`, { mode: 'all', kind: 'invite' });
     const papers = new Set();
     for (let i = 0; i < 8; i++) {
       const c = client(); await c('POST', '/api/auth/login', { username: 'cand' + i, password: 'secret1', role: 'user' });

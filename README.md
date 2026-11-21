@@ -62,6 +62,9 @@ second submits the exam automatically with the answers saved so far. When time i
 (also on the server, even if the browser was closed). Browsers cannot technically block Esc or Alt-Tab; the portal
 detects them. Use desktop Chrome or Edge.
 
+## Who can see an exam
+A published exam is visible, and can be opened, only by the candidates the admin has **invited** (Send email reminders tab: tick the candidates, or the top box for everyone, and send an Invitation). Everyone else does not see it on their dashboard and gets "not found" if they try its link. A candidate who already started or finished an exam always keeps access to it. The invitation is recorded even when e-mail is not set up, so access never depends on the mail provider.
+
 ## Reminders
 On an exam's **Send email reminders** tab the admin e-mails the exam details and portal link to everyone / only those yet to submit /
 selected people. The link opens the portal, asks for sign-in, then goes straight to that assessment's instructions.

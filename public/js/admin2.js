@@ -25,7 +25,7 @@ async function inviteTab(box, id) {
   const ended = Date.now() > Date.parse(e.end_at);
 
   box.innerHTML = `
-    ${!d.smtp_configured ? '<div class="alert warn">E-mail is not set up on the server. In Render > Environment add BREVO_API_KEY and MAIL_FROM, save, and wait for the redeploy.</div>' : ''}
+    ${!d.smtp_configured ? '<div class="alert warn">E-mail is not set up on the server, so invitations cannot be e-mailed. In Render > Environment add BREVO_API_KEY and MAIL_FROM. Candidates you invite can still see the exam on their dashboard.</div>' : ''}
     ${!e.published ? '<div class="alert warn">Publish the exam first.</div>' : ''}
     ${ended ? '<div class="alert warn">This exam has ended.</div>' : ''}
     <div class="card">
@@ -37,19 +37,19 @@ async function inviteTab(box, id) {
         </div>
         <input type="text" id="aq" placeholder="Search candidates…" style="max-width:220px" class="right">
       </div>
-      <p class="small mute" style="margin:0 0 10px">Choose who receives it: tick the top box to select everyone, or tick individual candidates. The e-mail contains the exam details and the portal link.</p>
+      <p class="small mute" style="margin:0 0 10px"><b>Only invited candidates can see this exam</b> on their dashboard and open it. Tick the top box to invite everyone, or tick individual candidates. The e-mail contains the exam details and the portal link.</p>
       <div class="tw"><table><thead><tr><th><input type="checkbox" id="all" title="Select everyone"></th><th>Candidate</th><th>E-mail</th><th>Last e-mail</th></tr></thead><tbody id="at"></tbody></table></div>
       <div class="row mt"><button class="btn primary lg" id="send">Send</button></div>
     </div>`;
 
-  const lastChip = (u) => (!u.last_kind ? '<span class="mute small">Not sent yet</span>'
+  const lastChip = (u) => (!u.last_kind ? '<span class="chip">Not invited</span>'
     : `<span class="chip ${u.last_status === 'sent' ? 'sent' : u.last_status === 'failed' ? 'failed' : 'pending'}" title="${esc(u.last_error || '')}">${u.last_kind === 'reminder' ? 'Reminder' : 'Invitation'} · ${u.last_status}</span> <span class="small mute">${fmtDT(u.last_sent_at || u.last_at)}</span>`);
   const visible = () => d.users.filter((u) => (u.username + u.full_name + u.email).toLowerCase().includes(q));
 
   function draw() {
     const n = sel.size, b = $('#send', box);
     b.textContent = `Send ${kind === 'reminder' ? 'reminder' : 'invitation'} to ${n} candidate${n === 1 ? '' : 's'}`;
-    b.disabled = !n || !d.smtp_configured || !e.published || ended || (kind === 'reminder' && started);
+    b.disabled = !n || !e.published || ended || (kind === 'reminder' && started);
     const rows = visible();
     $('#at', box).innerHTML = rows.length ? rows.map((u) => `<tr>
       <td><input type="checkbox" data-u="${u.id}" ${sel.has(u.id) ? 'checked' : ''} ${u.email ? '' : 'disabled'}></td>
@@ -71,7 +71,7 @@ async function inviteTab(box, id) {
     if (!await confirmBox(`Send ${kind === 'reminder' ? 'a reminder' : 'an invitation'} e-mail with the portal link to ${n} candidate${n === 1 ? '' : 's'}?`, 'Send', false)) return;
     try {
       const r = await api('POST', `/api/admin/exams/${id}/notify`, { kind, mode: 'selected', user_ids: [...sel] });
-      toast(`${r.queued} e-mail(s) queued${r.skipped_no_email ? ` · ${r.skipped_no_email} skipped (no address)` : ''}`, 'ok');
+      toast(`${r.queued} candidate${r.queued === 1 ? '' : 's'} invited${r.email_enabled ? ' · e-mail on its way' : ' · e-mail NOT sent (not set up)'}${r.skipped_no_email ? ` · ${r.skipped_no_email} skipped (no address)` : ''}`, r.email_enabled ? 'ok' : 'err');
       sel.clear(); refresh();
     } catch (err) { fail(err); }
   };

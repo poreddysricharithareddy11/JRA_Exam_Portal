@@ -38,6 +38,7 @@ const api = async (m, u, body) => {
     assert.equal((await api('POST', `/api/admin/exams/${eid}/publish`, { published: true })).status, 200);
     for (const [u, n] of [['priya', 'Priya Sharma'], ['rahul', 'Rahul Verma'], ['anita', 'Anita Rao']])
       await api('POST', '/api/admin/users', { username: u, password: 'secret1', email: `${u}@example.com`, full_name: n });
+    await api('POST', `/api/admin/exams/${eid}/notify`, { mode: 'all', kind: 'invite' });   // only invited candidates see the exam
     // one finished attempt (for charts/results) and one still writing (for the live monitor)
     const login = async (u) => { const c = { cookie: '' }; const r = await fetch(BASE + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: u, password: 'secret1' }) }); c.cookie = r.headers.get('set-cookie').split(';')[0]; return c; };
     const cr = await login('priya');

@@ -81,6 +81,10 @@ async function call(cookie, method, url, body) {
     if (!up.ok) throw new Error('question upload failed: ' + up.status);
     const pub = await call(ac, 'POST', `/api/admin/exams/${eid}/publish`, { published: true });
     if (pub.status !== 200) throw new Error('publish failed: ' + JSON.stringify(pub.data));
+    // only invited candidates can see / start an exam: invite exactly the test candidates (never the real ones)
+    const ids = ((await call(ac, 'GET', '/api/admin/users')).data.users || []).filter((x) => x.username.startsWith(PREFIX)).map((x) => x.id);
+    const inv = await call(ac, 'POST', `/api/admin/exams/${eid}/notify`, { mode: 'selected', user_ids: ids, kind: 'invite' });
+    if (inv.status !== 200) throw new Error('could not invite the test candidates: ' + JSON.stringify(inv.data));
     console.log(`exam ${eid} published; releasing ${N} candidates at the same moment...`);
 
     const lat = { login: [], start: [], answer: [], submit: [] }; let done = 0; const errs = [];

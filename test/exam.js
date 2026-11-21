@@ -32,6 +32,7 @@ const api = async (m, u, body) => {
     await api('POST', `/api/admin/exams/${eid}/questions/upload`, fd);
     assert.equal((await api('POST', `/api/admin/exams/${eid}/publish`, { published: true })).status, 200);
     for (const u of ['cand1', 'cand2']) await api('POST', '/api/admin/users', { username: u, password: 'secret1', email: `${u}@example.com`, full_name: u.toUpperCase() });
+    await api('POST', `/api/admin/exams/${eid}/notify`, { mode: 'all', kind: 'invite' });   // only invited candidates see the exam;
 
     chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${DBG}`, `--user-data-dir=${path.join(dir, 'chrome')}`, '--window-size=1366,900', '--no-first-run', '--disable-gpu', 'about:blank'], { stdio: 'ignore' });
     let tab; for (let i = 0; i < 60; i++) { try { tab = await (await fetch(`http://127.0.0.1:${DBG}/json/new?about:blank`, { method: 'PUT' })).json(); break; } catch (_) { await sleep(250); } }

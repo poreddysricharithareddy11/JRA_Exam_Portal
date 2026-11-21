@@ -18,6 +18,7 @@ async function call(cookie, method, url, body) {
   const fd = new FormData(); fd.append('text', bank);
   await fetch(`${BASE}/api/admin/exams/${eid}/questions/upload`, { method: 'POST', headers: { cookie: ac }, body: fd });
   await call(ac, 'POST', `/api/admin/exams/${eid}/publish`, { published: true });
+  await call(ac, 'POST', `/api/admin/exams/${eid}/notify`, { mode: 'all', kind: 'invite' });   // only invited candidates can start
   const t0 = Date.now(); let ok = 0, errs = 0;
   await Promise.all(users.map(async (u) => {
     try {

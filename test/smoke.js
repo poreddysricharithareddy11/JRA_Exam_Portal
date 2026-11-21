@@ -89,6 +89,22 @@ Answer Key
     }
     r = await admin('POST', '/api/admin/exams/' + eid + '/publish', { published: true });
     assert.equal(r.status, 200, 'published');
+
+    /* ===== an exam is visible only to candidates the admin has invited ===== */
+    await admin('POST', '/api/admin/users', { username: 'outsider', password: 'secret1', email: 'out@example.com', full_name: 'Outsider' });
+    const outsider = client();
+    await outsider('POST', '/api/auth/login', { username: 'outsider', password: 'secret1', role: 'user' });
+    const uid1 = (await admin('GET', '/api/admin/users')).data.users.find((u) => u.username === 'stu1').id;
+    assert.equal((await outsider('GET', '/api/user/exams')).data.exams.length, 0, 'not invited: the exam is not on the dashboard');
+    assert.equal((await outsider('GET', `/api/user/exams/${eid}/info`)).status, 404, 'not invited: cannot open the exam page');
+    assert.equal((await outsider('POST', `/api/user/exams/${eid}/start`)).status, 404, 'not invited: cannot start the exam');
+    r = await admin('POST', `/api/admin/exams/${eid}/notify`, { mode: 'selected', user_ids: [uid1], kind: 'invite' });
+    assert.equal(r.status, 200, 'inviting works even when e-mail is not set up: ' + JSON.stringify(r.data)); assert.equal(r.data.email_enabled, false);
+    assert.equal((await outsider('GET', '/api/user/exams')).data.exams.length, 0, 'inviting someone else does not expose the exam');
+    await admin('POST', `/api/admin/exams/${eid}/notify`, { mode: 'all', kind: 'invite' });
+    assert.equal((await outsider('GET', '/api/user/exams')).data.exams.length, 1, 'invited: the exam appears on the dashboard');
+    assert.equal((await outsider('GET', `/api/user/exams/${eid}/info`)).status, 200, 'invited: the exam page opens');
+
     r = await admin('GET', '/api/admin/exams/' + eid + '/sets');
     assert.equal(r.data.sets.length, 1); assert.equal(r.data.sets[0].count, 5, 'one set holding the whole bank');
 
@@ -142,6 +158,7 @@ Answer Key
     const fdq = new FormData(); fdq.append('text', '1. Q?\nA) x\nB) y\nAnswer: A');
     console.log('UP', JSON.stringify((await admin('POST', `/api/admin/exams/${fid}/questions/upload`, fdq, true)).data));
     console.log('PUB', JSON.stringify((await admin('POST', `/api/admin/exams/${fid}/publish`, { published: true })).data));
+    await admin('POST', `/api/admin/exams/${fid}/notify`, { mode: 'all', kind: 'invite' });
     r = await s2('POST', `/api/user/exams/${fid}/start`);
     assert.equal(r.status, 403, 'cannot start before opening time');
 

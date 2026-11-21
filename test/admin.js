@@ -79,7 +79,8 @@ const wait = async (cond, ms = 12000) => { const t = Date.now(); while (Date.now
     /* ===== two candidates answer by *original option*, mapped through their shuffled view ===== */
     const people = {};
     async function sit(user, picks) {   // picks[i] = original option index for bank question i, or null
-      await call(admin, 'POST', '/api/admin/users', { username: user, password: 'secret1', email: `${user}@x.com` });
+      const uid = (await call(admin, 'POST', '/api/admin/users', { username: user, password: 'secret1', email: `${user}@x.com` })).data.id;
+      await call(admin, 'POST', `/api/admin/exams/${eid}/notify`, { mode: 'selected', user_ids: [uid], kind: 'invite' });   // only invited candidates can start
       const c = jar(); await call(c, 'POST', '/api/auth/login', { username: user, password: 'secret1' });
       const st = (await call(c, 'POST', `/api/user/exams/${eid}/start`)).data;
       const ans = {};

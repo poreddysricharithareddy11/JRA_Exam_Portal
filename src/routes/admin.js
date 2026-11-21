@@ -429,7 +429,6 @@ router.post('/exams/:id/notify', async (req, res) => {
   const e = await loadExam(req, res); if (!e) return;
   const b = req.body || {};
   if (!e.published) return bad(res, 'Publish the exam before sending invitations.');
-  if (!mailer.configured()) return bad(res, 'E-mail is not set up on the server. In Render > Environment add BREVO_API_KEY and MAIL_FROM, save, and wait for the redeploy.');
   const kind = b.kind === 'reminder' ? 'reminder' : 'invite';
   const now = Date.now();
   if (now > Date.parse(e.end_at)) return bad(res, 'This exam has already ended.');
@@ -446,7 +445,8 @@ router.post('/exams/:id/notify', async (req, res) => {
   if (!users.length) return bad(res, 'No recipients selected.');
   const r = await mailer.notifyUsers({ exam: e, users, kind, message, link: examLink(req, e) });
   if (!r.queued) return bad(res, 'None of the selected users has an e-mail address.');
-  res.json({ queued: r.queued, skipped_no_email: r.noEmail });
+  // The invitation itself (what lets the candidate see the exam) is recorded either way; the e-mail is sent when a mail provider is set up.
+  res.json({ queued: r.queued, skipped_no_email: r.noEmail, email_enabled: mailer.configured() });
 });
 
 router.post('/notifications/:nid/retry', async (req, res) => {

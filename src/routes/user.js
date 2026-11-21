@@ -11,6 +11,11 @@ for (const name of ['id', 'aid']) router.param(name, (req, res, next, v) => (/^\
 const bad = (res, msg, code = 400) => res.status(code).json({ error: msg });
 const LATE_GRACE_MS = 10000; // allows the final auto-save to land right at the deadline
 
+/** A candidate can see and open an exam only after the admin has invited them (an invitation or a reminder was sent to them),
+ *  or when they already have an attempt on it (so a started / finished exam never disappears). */
+const hasAccess = async (examId, userId) => !!(await db.prepare(
+  'SELECT 1 AS ok WHERE EXISTS (SELECT 1 FROM notifications WHERE exam_id=? AND user_id=?) OR EXISTS (SELECT 1 FROM attempts WHERE exam_id=? AND user_id=?)').get(examId, userId, examId, userId));
+
 /* ------------------------------ dashboard ------------------------------- */
 router.get('/exams', async (req, res) => {
   const now = Date.now();
@@ -18,7 +23,9 @@ router.get('/exams', async (req, res) => {
       e.questions_per_attempt, (SELECT COUNT(*) FROM questions q WHERE q.exam_id=e.id) AS pool_count,
       a.id AS attempt_id, a.status AS attempt_status
     FROM exams e LEFT JOIN attempts a ON a.exam_id=e.id AND a.user_id=?
-    WHERE e.published=1 AND e.end_at >= ? ORDER BY e.start_at`).all(req.user.id, new Date(now).toISOString()))
+    WHERE e.published=1 AND e.end_at >= ?
+      AND (a.id IS NOT NULL OR EXISTS (SELECT 1 FROM notifications n WHERE n.exam_id=e.id AND n.user_id=?))
+    ORDER BY e.start_at`).all(req.user.id, new Date(now).toISOString(), req.user.id))
     .map(({ questions_per_attempt, pool_count, ...x }) => ({ ...x, question_count: svc.paperSize({ questions_per_attempt }, pool_count) }));
   res.json({
     now: new Date(now).toISOString(),
@@ -63,7 +70,7 @@ function publicExam(e) {
 
 router.get('/exams/:id/info', async (req, res) => {
   const e = await db.prepare('SELECT * FROM exams WHERE id=? AND published=1').get(req.params.id);
-  if (!e) return bad(res, 'Exam not found', 404);
+  if (!e || !(await hasAccess(e.id, req.user.id))) return bad(res, 'Exam not found', 404);
   const pool = await db.prepare('SELECT COUNT(*) c, AVG(marks) a, MIN(marks) mn, MAX(marks) mx FROM questions WHERE exam_id=?').get(e.id);
   const n = svc.paperSize(e, pool.c);
   const done = await db.prepare("SELECT 1 FROM attempts WHERE exam_id=? AND user_id=? AND status='submitted'").get(e.id, req.user.id);
@@ -132,7 +139,7 @@ async function startAttempt(exam, userId) {
 
 router.post('/exams/:id/start', async (req, res) => {
   const exam = await db.prepare('SELECT * FROM exams WHERE id=? AND published=1').get(req.params.id);
-  if (!exam) return bad(res, 'Exam not found', 404);
+  if (!exam || !(await hasAccess(exam.id, req.user.id))) return bad(res, 'Exam not found', 404);
   const existing = await db.prepare('SELECT * FROM attempts WHERE exam_id=? AND user_id=?').get(exam.id, req.user.id);
   if (existing && existing.status === 'submitted') return bad(res, 'You have already completed this exam.', 409);
 

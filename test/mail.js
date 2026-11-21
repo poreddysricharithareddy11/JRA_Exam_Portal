@@ -66,9 +66,9 @@ const decode = (raw) => raw.replace(/=\r\n/g, '').replace(/=([0-9A-F]{2})/g, (_,
     const eid = await mk('Mail Exam', -60e3);
     for (const [u, e] of [['alice', 'alice@x.com'], ['bob', 'bob@x.com'], ['carol', 'carol@x.com']]) await call('POST', '/api/admin/users', { username: u, password: 'secret1', email: e, full_name: u.toUpperCase() });
 
-    // 1) refuses politely when e-mail isn't configured
+    // 1) without a mail provider the invitation is still recorded (it is what lets the candidate see the exam), but no e-mail goes out
     let r = await call('POST', `/api/admin/exams/${eid}/notify`, { mode: 'all', kind: 'invite' });
-    assert.equal(r.status, 400); assert.match(r.data.error, /not set up/i);
+    assert.equal(r.status, 200); assert.equal(r.data.email_enabled, false); assert.equal(r.data.queued, 3);
     assert.equal((await call('GET', '/api/admin/stats')).data.smtp_configured, false);
 
     // restart with SMTP pointing at the fake server
