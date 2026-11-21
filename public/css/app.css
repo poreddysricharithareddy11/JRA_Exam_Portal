@@ -233,3 +233,4 @@ body.wm::after{content:'';position:fixed;inset:0;background:var(--logo) center 5
 :root[data-theme=dark] body.wm::after{opacity:.07}
 @media print{body.wm::after{display:none}}
 .pill:disabled{opacity:.45;cursor:not-allowed}
+.kv{display:flex;flex-direction:column;gap:2px;padding:10px 12px;background:var(--bg);border:1px solid var(--line);border-radius:10px}.kv span{font-size:.78rem;color:var(--mute)}.kv b{font-size:.98rem}

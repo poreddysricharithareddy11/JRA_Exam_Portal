@@ -123,19 +123,41 @@ async function adminExam(id, tab) {
   };
   const box = $('#tab', main);
   if (tab === 'settings') {
-    box.innerHTML = `${exam.published ? '<div class="alert info">This exam is published. You can only <b>extend the closing time</b>; the other settings are locked.</div>' : ''}<div class="card">${examFormHTML(exam)}</div>`;
-    const form = $('#ef', box);
     if (exam.published) {
-      $$('input, textarea', form).forEach((i) => { if (i.name !== 'end_at') i.disabled = true; });
-      form.elements.end_at.min = toLocalInput(exam.end_at);
+      // Published: show the exam's details once (read-only) and allow only extending the closing time.
+      const row = (k, v) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
+      box.innerHTML = `<div class="card">
+        <h3 style="margin:0 0 12px">${esc(exam.name)}</h3>
+        <div class="grid g3">
+          ${row('Duration', dur(exam.duration_min))}
+          ${row('Pass mark', exam.pass_percent + '%')}
+          ${row('Marks per question', exam.default_marks)}
+          ${row('Negative marking', exam.negative_marks ? '-' + exam.negative_marks + ' per wrong' : 'None')}
+          ${row('Questions per candidate', exam.questions_per_attempt || 'All')}
+          ${row('Number of sets', exam.num_sets || 1)}
+          ${row('Opens', fmtDT(exam.start_at))}
+          ${row('Closes', fmtDT(exam.end_at))}
+        </div>
+        <p class="small mute" style="margin:12px 0 0">This exam is published, so these settings are locked. You can only extend the closing time.</p>
+      </div>
+      <div class="card"><form id="ef">
+        <div class="field" style="max-width:320px"><label class="f">Extend closing time</label><input type="datetime-local" name="end_at" required value="${toLocalInput(exam.end_at)}" min="${toLocalInput(exam.end_at)}"></div>
+        <button class="btn primary">Save new closing time</button>
+      </form></div>`;
+      $('#ef', box).onsubmit = async (ev) => {
+        ev.preventDefault();
+        try {
+          await api('PUT', `/api/admin/exams/${id}`, { end_at: fromLocalInput(ev.target.elements.end_at.value) });
+          toast('Closing time updated', 'ok'); adminExam(id, 'settings');
+        } catch (e) { fail(e); }
+      };
+    } else {
+      box.innerHTML = `<div class="card">${examFormHTML(exam)}</div>`;
+      $('#ef', box).onsubmit = async (ev) => {
+        ev.preventDefault();
+        try { await api('PUT', `/api/admin/exams/${id}`, readExamForm(ev.target)); toast('Saved', 'ok'); adminExam(id, 'settings'); } catch (e) { fail(e); }
+      };
     }
-    form.onsubmit = async (ev) => {
-      ev.preventDefault();
-      try {
-        await api('PUT', `/api/admin/exams/${id}`, exam.published ? { end_at: fromLocalInput(form.elements.end_at.value) } : readExamForm(ev.target));
-        toast('Saved', 'ok'); adminExam(id, 'settings');
-      } catch (e) { fail(e); }
-    };
   } else if (tab === 'results') resultsTab(box, id, results);
   else if (tab === 'invite') inviteTab(box, id);
   else if (tab === 'live') liveTab(box, id);
