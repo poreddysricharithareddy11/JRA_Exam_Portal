@@ -130,13 +130,29 @@ const api = async (m, u, body) => {
     assert.equal(await ev("document.body.classList.contains('wm')"), true, 'watermark enabled on signed-in pages');
     assert.equal(await ev("getComputedStyle(document.body, '::after').backgroundImage.includes('/brand/logo')"), true, 'watermark uses the logo');
     await shot('06-admin-exams');
-    // a tab that stays open is told when a newer version of the portal has been deployed (simulated: the server reports a new commit)
-    await ev("(() => { const real = window.fetch; let n = 0; window.__realFetch = real; window.fetch = (u, o) => (String(u).includes('healthz') ? Promise.resolve({ json: async () => ({ commit: n++ ? 'bbbbbbb' : 'aaaaaaa' }) }) : real(u, o)); })();true");
-    await ev('JEP.checkVersion().then(() => JEP.checkVersion()).then(() => true)');
-    assert.equal(await ev("!!document.querySelector('#newver')"), true, 'banner offered when a new version is deployed');
-    assert.match(await ev("document.querySelector('#newver').innerText"), /new version.*Refresh now/is);
-    await shot('06b-new-version-banner');
-    await ev("window.fetch = window.__realFetch; document.querySelector('#newver').remove(); true");
+    // updates apply by themselves: when the server reports a new version, an open page reloads at a SAFE moment (simulated server version change)
+    const fakeNewVersion = () => ev("(() => { window.__realFetch = window.__realFetch || window.fetch; let n = 0; window.fetch = (u, o) => (String(u).includes('healthz') ? Promise.resolve({ json: async () => ({ commit: n++ ? 'bbbbbbb' : 'aaaaaaa' }) }) : window.__realFetch(u, o)); setTimeout(() => JEP.checkVersion().then(() => JEP.checkVersion()), 50); })();true");
+    // 1) an idle page: reloads on its own (the marker set on the old page disappears) and the person is still signed in
+    await ev("window.__alive = 'old page';true");
+    await fakeNewVersion();
+    assert.equal(await waitFor("!window.__alive && !!document.querySelector('.brandlogo')", 15000), true, 'an idle page reloads itself when a new version is deployed, still signed in');
+    // 2) a dialog is open: must NOT reload; it waits until the dialog is closed
+    await waitFor("!!document.querySelector('.brandlogo')");
+    await ev("window.__alive = 'dialog page';modal('<p id=dlg>Please read</p>');true");
+    await fakeNewVersion();
+    await sleep(6000);
+    assert.equal(await ev("window.__alive === 'dialog page' && !!document.querySelector('#dlg') && JEP.updatePending()"), true, 'an open dialog is never interrupted by an update');
+    await ev("document.querySelector('.overlay').remove();true");
+    assert.equal(await waitFor("!window.__alive", 15000), true, 'once the dialog is closed the page reloads');
+    // 3) something typed into a form: must NOT reload by itself; the next click to another page does (nothing is lost)
+    await waitFor("!!document.querySelector('.brandlogo')");
+    await go('#/admin/users'); await waitFor("document.body.innerText.includes('User data') || !!document.querySelector('#srch, #uq, input')");
+    await ev("window.__alive = 'typing page';(() => { const i = document.querySelector('main input'); if (i) { i.value = 'abc'; i.dispatchEvent(new Event('input', { bubbles: true })); } })();true");
+    await fakeNewVersion();
+    await sleep(6000);
+    assert.equal(await ev("window.__alive === 'typing page'"), true, 'a page with typed-in text is not reloaded under the person');
+    await ev("location.hash = '#/admin';true");
+    assert.equal(await waitFor("!window.__alive", 15000), true, 'it reloads when the person moves to another page');
     await go(`#/admin/exam/${eid}/invite`);
     await waitFor("!!document.querySelector('#send')");
     assert.ok((await ev('document.body.innerText')).includes('not set up'), 'warns that e-mail is not configured');

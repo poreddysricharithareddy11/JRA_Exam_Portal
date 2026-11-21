@@ -28,9 +28,12 @@ async function api(method, url, body, isForm) {
     if (isForm) opt.body = body;
     else { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
   }
-  let res;
-  try { res = await fetch(url, opt); } catch (_) { throw new Error('Network problem. Please check your connection.'); }
-  const data = res.headers.get('content-type')?.includes('json') ? await res.json().catch(() => ({})) : {};
+  let res, data;
+  JEP.busy = (JEP.busy || 0) + 1;
+  try {
+    try { res = await fetch(url, opt); } catch (_) { throw new Error('Network problem. Please check your connection.'); }
+    data = res.headers.get('content-type')?.includes('json') ? await res.json().catch(() => ({})) : {};
+  } finally { JEP.busy--; }
   if (res.status === 401 && JEP.me && !url.includes('/auth/login')) { JEP.me = null; store.sdel(TOKEN_KEY); location.hash = '#/login'; }
   if (!res.ok) { const e = new Error(data.error || `Request failed (${res.status})`); e.status = res.status; e.data = data; throw e; }
   return data;
@@ -256,26 +259,34 @@ window.addEventListener('load', route);
   }, { passive: true });
 })();
 
-/* A tab that stays open never reloads by itself, so it could keep running an old copy of the portal after an update.
-   Every minute ask the server which version is deployed; when it changes, offer a one-click refresh (never during an exam). */
+/* Updates apply by themselves. A tab that stays open would keep running an old copy of the portal after a new version is deployed,
+   so every 30 s ask the server which version is live. When it changes, reload at a SAFE moment:
+   not during an exam, not while a dialog is open, not while something has been typed into a form, not while a request (upload, import) is running.
+   If the page cannot reload right now, it reloads at the next click to a new page, when nothing typed can be lost. */
 (() => {
-  let base = null, shown = false;
+  let base = null, pending = false;
+  const safe = () => !JEP.guard && !document.querySelector('.overlay') && !JEP.dirty && !(JEP.busy > 0);
+  const reload = () => location.reload();
+  const maybe = () => { if (pending && safe()) reload(); };
   const check = async () => {
     try {
       const d = await (await fetch('/healthz', { cache: 'no-store' })).json();
       if (!d || !d.commit) return;                                   // only the hosted site reports a version
       if (base === null) { base = d.commit; return; }
-      if (d.commit === base || shown || JEP.guard) return;           // JEP.guard is set while a candidate is taking an exam
-      shown = true;
-      const bar = document.createElement('div');
-      bar.id = 'newver';
-      bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:9999;background:#4338ca;color:#fff;padding:10px 16px;display:flex;gap:12px;align-items:center;justify-content:center;font-weight:600;box-shadow:0 2px 12px rgba(0,0,0,.25)';
-      bar.innerHTML = '<span>A new version of the portal is available.</span><button style="background:#fff;color:#4338ca;border:0;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer">Refresh now</button>';
-      bar.querySelector('button').onclick = () => location.reload();
-      document.body.append(bar);
-    } catch (_) { /* server restarting: try again next minute */ }
+      if (d.commit !== base) pending = true;
+    } catch (_) { /* server restarting: try again shortly */ }
+    maybe();
   };
   JEP.checkVersion = check;
+  JEP.updatePending = () => pending;
+  // anything typed into a field marks the page as "has unsaved input" until the person moves to another page
+  document.addEventListener('input', (e) => { if (e.target && e.target.closest && e.target.closest('main')) JEP.dirty = true; }, true);
+  window.addEventListener('hashchange', () => {
+    if (pending && !JEP.guard) { reload(); return; }                 // moving to another page is a natural moment: nothing is lost
+    JEP.dirty = false;
+  });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
   check();
-  setInterval(() => { if (!document.hidden) check(); }, 60000);
+  setInterval(() => { if (!document.hidden) check(); }, 30000);
+  setInterval(maybe, 4000);
 })();

@@ -83,6 +83,10 @@ const api = async (m, u, body) => {
     assert.equal(await ev("document.querySelectorAll('#pal button').length"), 4, 'paper has 4 questions (questions per candidate)');
     await waitFor("/^[0-9]+:[0-9]{2}(:[0-9]{2})?$/.test(document.querySelector('#tm').textContent)");   // countdown is running
     assert.equal(await ev("document.querySelectorAll('.choice').length"), 4, 'four options shown for question 1');
+    // a new version being deployed must NEVER reload a candidate who is in the middle of an exam
+    await ev("window.__inExam = 'yes';(() => { const real = window.fetch; let n = 0; window.fetch = (u, o) => (String(u).includes('healthz') ? Promise.resolve({ json: async () => ({ commit: n++ ? 'bbbbbbb' : 'aaaaaaa' }) }) : real(u, o)); setTimeout(() => JEP.checkVersion().then(() => JEP.checkVersion()), 50); })();true");
+    await sleep(6500);
+    assert.equal(await ev("window.__inExam === 'yes' && !!document.querySelector('#pal') && JEP.updatePending()"), true, 'the exam screen is never reloaded by an update');
     // candidate watermark: their own e-mail, repeated over the paper, that cannot be clicked, removed or hidden
     const wm = await ev(`(() => { const el = document.getElementById('wm-user'); if (!el) return null; const cs = getComputedStyle(el);
       return { img: decodeURIComponent(cs.backgroundImage), pe: cs.pointerEvents, pos: cs.position, w: el.getBoundingClientRect().width, h: el.getBoundingClientRect().height, vw: innerWidth, vh: innerHeight }; })()`);
