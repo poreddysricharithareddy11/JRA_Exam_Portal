@@ -220,9 +220,24 @@ async function docxOf(items, tableRows) {
     const r = parseQuestions(Array.from({ length: 6 }, (_, i) => `Which of the following is correct?\nA) option ${i}a\nB) option ${i}b\nC) option ${i}c\nD) option ${i}d`).join('\n'));
     assert.equal(r.questions.length, 6); assert.ok(r.questions.every((q) => /Which of the following is correct/.test(q.text) && q.options.length === 4));
   });
-  await t('a question that does not have exactly 4 options is reported', () => {
+  await t('a question with fewer than 4 options is reported; there is never an option E', () => {
     const r = parseQuestions('1. One?\nA) a\nB) b\nC) c\nD) d\n2. Two?\nA) a\nB) b\nC) c\n3. Three?\nA) a\nB) b\nC) c\nD) d\nE) e');
-    assert.ok(r.warnings.some((w) => /exactly 4 options/.test(w) && /Q2 \(3\)/.test(w) && /Q3 \(5\)/.test(w)), r.warnings.join(' | '));
+    assert.ok(r.warnings.some((w) => /exactly 4 options/.test(w) && /Q2 \(3\)/.test(w)), r.warnings.join(' | '));
+    assert.ok(r.questions.every((q) => q.options.length <= 4), 'no question ever has more than 4 options');
+  });
+  await t('"E:" data inside option D is part of option D, never a fifth option (all option styles, wrapped or not)', () => {
+    const Q = 'In the recorded field coordinates table, what are the Northing (N), Easting (E), and Elevation (Z) of Point 1?';
+    const opts = ['N: 2000.000 m, E: 1000.000 m, Z: 100.000 m', 'N: 2000.486 m, E: 987.762 m, Z: 101.912 m', 'N: 2007.435 m, E: 1004.678 m, Z: 101.647 m', 'N: 2012.388 m, E: 994.000 m, Z: 100.500 m'];
+    const marks = { 'A)': (k) => 'ABCD'[k] + ')', 'A.': (k) => 'ABCD'[k] + '.', '(A)': (k) => '(' + 'ABCD'[k] + ')', 'A:': (k) => 'ABCD'[k] + ':' };
+    for (const [name, mk] of Object.entries(marks)) for (const wrap of [false, true]) {
+      const text = ['43. Which instrument measures angles?', ...['Chain', 'Theodolite', 'Tape', 'Level'].map((o, k) => `${mk(k)} ${o}`), '44. ' + Q,
+        ...opts.map((o, k) => (wrap && k === 3 ? `${mk(k)} ${o.slice(0, o.indexOf(', E:') + 1)}\n${o.slice(o.indexOf(', E:') + 2)}` : `${mk(k)} ${o}`)),
+        '45. Next question?', ...['a', 'b', 'c', 'd'].map((o, k) => `${mk(k)} ${o}`)].join('\n');
+      const r = parseQuestions(text);
+      assert.equal(r.questions.length, 3, `${name} wrap=${wrap}: 3 questions`);
+      assert.ok(r.questions.every((q) => q.options.length === 4), `${name} wrap=${wrap}: 4 options each`);
+      assert.equal(r.questions[1].options[3], opts[3], `${name} wrap=${wrap}: option D keeps its "E: ..." data`);
+    }
   });
 
   /* ---------------- sections are not questions ---------------- */

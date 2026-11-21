@@ -162,7 +162,16 @@ const KEY_PAIRS = /^(?:(?:q\.?\s*)?\d{1,4}\s*[.):\-–—=|]?\s*[(\[]?[A-Ha-h][)
 const NOISE_LINE = /^(?:page\s*)?\d{1,3}\s*(?:\/|of)\s*\d{1,3}$|^[-–—\s]*\d{1,3}[-–—\s]*$/i;
 
 const qMatch = (l) => { for (const re of Q_PATTERNS) { const m = re.exec(l); if (m) return { no: parseInt(m[1], 10), text: (m[2] || '').trim() }; } return null; };
-const optMatch = (l) => { for (const re of OPT_PATTERNS) { const m = re.exec(l); if (m) return { letter: m[1].toUpperCase(), text: (m[2] || '').trim() }; } return null; };
+// Every question has exactly 4 options: A, B, C, D. There is never an option E (or F-H): a stray "E:" inside an option is DATA,
+// e.g. "D) N: 2012.388 m,  E: 994.000 m, Z: 100.500 m" (an Easting), so letters after D are never read as options.
+const MAX_OPTIONS = 4;
+const optMatch = (l) => {
+  for (const re of OPT_PATTERNS) {
+    const m = re.exec(l);
+    if (m && letterIdx(m[1]) < MAX_OPTIONS) return { letter: m[1].toUpperCase(), text: (m[2] || '').trim() };
+  }
+  return null;
+};
 
 const INVISIBLE = new RegExp('[' + String.fromCharCode(0xa0, 0x200b, 0xfeff, 0x2028, 0x2029) + ']', 'g');
 function normalise(text) {
@@ -193,7 +202,9 @@ function stripNoise(lines) {
   return lines.filter((l, i) => {
     if (!l) return false;
     if (NOISE_LINE.test(l)) return false;
-    if (l.length > 6 && freq.get(sig(l)) >= 3 && !qMatch(l) && !optMatch(l) && !ANS_RE.test(l) && !isStem(i)) return false;
+    // option text that wraps onto a second line and happens to repeat ("E: 994.000 m, Z: 100.500 m", "of the above") is content, not a footer
+    const content = (/^[A-Za-z]{1,3}\s*[:=]\s*\S/.test(l) || /^[a-z]/.test(l)) && !/www\.|https?:|@|\.com\b/i.test(l);
+    if (l.length > 6 && freq.get(sig(l)) >= 3 && !qMatch(l) && !optMatch(l) && !ANS_RE.test(l) && !isStem(i) && !content) return false;
     return true;
   });
 }
@@ -233,8 +244,8 @@ function stripHeadingMerges(lines) {
 }
 
 function dropHeadings(lines) {
-  const complete = (l) => { const o = l && optMatch(l); return !!l && (findChain(l) || (o && o.letter >= 'D')); };   // a line that ended a block of options
-  return lines.filter((l, i) => {
+  let blockDone = true;      // are we between two question blocks? (true after the last option D / an answer line, also across wrapped option text)
+  const decide = (l, i) => {
     if (!l || qMatch(l) || optMatch(l) || ANS_RE.test(l) || EXPL_RE.test(l)) return true;
     if (/[?]\s*$/.test(l)) return true;                                    // a question mark: it is a question
     if (/^[(\[]?[A-Ha-h][)\]]?\.?$/.test(l)) return true;                  // a bare option letter ("B")
@@ -245,13 +256,21 @@ function dropHeadings(lines) {
     const words = l.split(/\s+/).length;
     if (words <= 14 && !(nextOpt && nextOpt.letter === 'A') && (SECTION_KW.test(l) || RANGE_LINE.test(l) || INSTRUCTION_LINE.test(l))) return false;
     // a short stand-alone line between two question blocks: "FUNDAMENTALS OF SURVEYING", "Levelling and Contouring"
-    const endsBlock = i === 0 || complete(prev) || (prev && (ANS_RE.test(prev) || EXPL_RE.test(prev)));
-    if (endsBlock && words <= 12 && !/[.?!;,]\s*$/.test(l) && /^[A-Z0-9]/.test(l) && !(nextOpt && nextOpt.letter === 'A')) {
+    const endsBlock = i === 0 || blockDone;
+    // (a heading has no digits and is not a "label: value" data line such as "E: 994.000 m, Z: 100.500 m")
+    if (endsBlock && words <= 12 && !/[.?!;,]\s*$/.test(l) && /^[A-Z]/.test(l) && !/\d/.test(l) && !/^[A-Za-z]{1,3}\s*[:=]/.test(l) && !(nextOpt && nextOpt.letter === 'A')) {
       const caps = !/[a-z]/.test(l) && /[A-Z]{3}/.test(l);
       if ((next && qMatch(next)) || caps) return false;
     }
     return true;
-  });
+  };
+  // remember where we are in the question block, from the lines that were KEPT
+  const track = (l) => {
+    if (!l) return;
+    if (qMatch(l)) blockDone = !!findChain(l);
+    else { const o = optMatch(l); if (o) blockDone = !!(findChain(l) || o.letter >= 'D'); else if (ANS_RE.test(l) || EXPL_RE.test(l)) blockDone = true; }
+  };
+  return lines.filter((l, i) => { const keep = decide(l, i); if (keep) track(l); return keep; });
 }
 
 /** Split "A) x B) y C) z" (on one line) into options, keeping letter order. */
@@ -260,7 +279,7 @@ function splitInline(letter, rest) {
   let cur = parts[0];
   for (;;) {
     const next = LETTERS[letterIdx(cur.letter) + 1];
-    if (!next) break;
+    if (!next || letterIdx(next) >= MAX_OPTIONS) break;
     const re = new RegExp(`\\s+[(\\[]?${next}\\s*[)\\]]\\s*|\\s+${next}\\s*[.:]\\s+`, 'i');
     const mm = re.exec(cur.text);
     if (!mm) break;
@@ -297,7 +316,7 @@ function findChain(line) {
     if (!a) return null;
     const chain = [a];
     let cur = a;
-    for (const L of 'BCDEFGH') { const n = markerAt(line, L, cur.end); if (!n) break; chain.push(n); cur = n; }
+    for (const L of 'BCD') { const n = markerAt(line, L, cur.end); if (!n) break; chain.push(n); cur = n; }
     if (chain.length >= 2) return chain;
     from = a.end;
   }
@@ -498,7 +517,8 @@ function parseUnnumbered(lines) {
     const am = ANS_RE.exec(line);
     if (cur && am && cur.options.length >= 2) { const idx = answerIndex(am[1], cur.options); if (idx !== null) cur.correct_index = idx; continue; }
     if (cur && EXPL_RE.test(line)) continue;
-    if (cur && cur.options.length >= 2 && (cur.options.length >= 4 || /^[A-Z0-9"“(]/.test(line))) { push(); stem = [line]; continue; }
+    const dataLine = /^[A-Za-z]{1,3}\s*[:=]\s*\S/.test(line);      // "E: 994.000 m, Z: 100.500 m" continues the last option; it is not a new question
+    if (cur && cur.options.length >= 2 && !dataLine && (cur.options.length >= 4 || /^[A-Z0-9"“(]/.test(line))) { push(); stem = [line]; continue; }
     if (cur && cur.options.length) { cur.options[cur.options.length - 1] += ' ' + line; continue; }
     stem.push(line);
   }
