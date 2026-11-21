@@ -251,3 +251,11 @@ body.wm::after{content:'';position:fixed;inset:0;background:var(--logo) center 5
 .empty .big{font-size:2.2rem}.empty b{color:var(--ink);font-size:1.05rem}
 @media(max-width:600px){.ucard .btn{width:100%;justify-content:center}}
 html,body{overscroll-behavior-x:none}
+
+/* read-only options in the question bank of a published exam (the generic ".qedit .opt span" rule is meant for the editable row) */
+.qedit .opt.view{display:flex;align-items:flex-start;gap:10px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);margin-bottom:6px}
+.qedit .opt.view .ol{width:24px;height:24px;flex:none;display:grid;place-items:center;border-radius:50%;background:var(--card);border:1px solid var(--line);font-size:.78rem;font-weight:700;color:var(--mute)}
+.qedit .opt.view .ot{flex:1 1 auto;width:auto;min-width:0;font-weight:400;color:var(--ink);overflow-wrap:anywhere;line-height:1.45}
+.qedit .opt.view.right-ans{border-color:var(--ok);background:var(--ok-l)}
+.qedit .opt.view.right-ans .ol{background:var(--ok);border-color:var(--ok);color:#fff}
+.qedit .opt.view.right-ans .ot{font-weight:600}

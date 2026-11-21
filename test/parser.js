@@ -293,6 +293,12 @@ async function docxOf(items, tableRows) {
     assert.equal(r.questions[0].options[3], 'Foresight Leveling', 'heading is not stuck to option D');
     assert.ok(!r.questions.some((q) => /SECTION|CALIBRATION|HARDWARE|\(Q\d/.test(q.text + q.options.join(' '))), 'no heading text anywhere');
   });
+  await t('a heading whose range wraps ("... (Q1 –" / "Q18)") does not turn "Q18)" into a question or leave "1." in the stem', () => {
+    const r = parseQuestions(['SECTION A: FUNDAMENTALS, PRINCIPLES & TYPES OF SURVEYING (Q1 –', 'Q18)', '1. What is the technical definition of surveying?', 'A) The art and science of determining relative positions of points', 'B) The study of subsurface mineral deposits', 'C) The architectural design of buildings', 'D) The calculation of structural loads',
+      '2. In simple words, how is surveying defined?', 'A) a', 'B) b', 'C) c', 'D) d'].join('\n'));
+    assert.equal(r.questions.length, 2); assert.equal(r.questions[0].text, 'What is the technical definition of surveying?'); assert.ok(r.questions.every((q) => q.options.length === 4));
+    assert.ok(!r.questions.some((q) => /^\s*\d+\s*[.)]/.test(q.text)), 'no stem keeps its printed number');
+  });
   await t('an option whose letter has no dot ("d None of above") is still option D', () => {
     const r = parseQuestions('52. Standard Fire Policy Covers\na. Loss due to explosion of boiler\nb. Loss due to explosion of domestic boiler\nc. a & b\nd None of above\n53. Next?\na. x\nb. y\nc. z\nd. w');
     assert.equal(r.questions.length, 2); assert.deepEqual(r.questions[0].options, ['Loss due to explosion of boiler', 'Loss due to explosion of domestic boiler', 'a & b', 'None of above']);

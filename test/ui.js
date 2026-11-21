@@ -264,6 +264,11 @@ const api = async (m, u, body) => {
     await waitFor("!!document.querySelector('#viewbank')");
     await ev("document.querySelector('#viewbank').click();true");
     await waitFor("document.body.innerText.includes('Add marks')");
+    // options are laid out as readable rows (the text must not be squeezed into a narrow column)
+    const optW = await ev("(() => { const o = document.querySelector('.qedit .opt.view .ot'); const r = o.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), o.innerText.length]; })()");
+    assert.ok(optW[0] > 150, `option text has room to breathe (width ${optW[0]}px)`);
+    assert.ok(optW[1] < 80, `an option is a few lines, not one word per line (height ${optW[1]}px)`);
+    await shot('10b-question-bank-readonly');
     assert.equal(await ev("document.querySelectorAll('.qedit [data-text], .qedit [data-marks], .qedit input[type=radio]').length"), 0, 'nothing is editable except Add marks');
     await ev("var c=document.querySelector('.qedit');c.querySelector('[data-grace]').click();c.querySelector('[data-score]').click();true");
     await waitFor("!!document.querySelector('#cfm')");

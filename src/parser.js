@@ -247,6 +247,8 @@ function dropHeadings(lines) {
   let prevDropped = false;   // was the previous line a heading that we removed? (then an ALL-CAPS line right after it is the heading's second line)
   let blockDone = true;      // are we between two question blocks? (true after the last option D / an answer line, also across wrapped option text)
   const decide = (l, i) => {
+    // the closing half of a heading whose range wraps onto a second line:  "SECTION A: ... (Q1 –"  /  "Q18)"  -- "Q18)" is not question 18
+    if (l && i > 0 && /[(\[]\s*(?:Q|Questions?)\s*\.?\s*\d{1,3}\s*(?:–|—|-|to|TO)\s*$/.test(lines[i - 1]) && /^[(\[]?\s*(?:Q|Questions?)?\s*\.?\s*\d{1,3}\s*[)\]]\s*$/.test(l)) return false;
     if (!l || qMatch(l) || optMatch(l) || ANS_RE.test(l) || EXPL_RE.test(l)) return true;
     if (/[?]\s*$/.test(l)) return true;                                    // a question mark: it is a question
     if (/^[(\[]?[A-Ha-h][)\]]?\.?$/.test(l)) return true;                  // a bare option letter ("B")
@@ -642,6 +644,8 @@ function parseQuestions(raw) {
   const long = questions.map((q, i) => ({ n: i + 1, q })).filter(({ q }) => q.text.length > 700 || q.options.some((o) => o.length > 400)).map((x) => x.n);
   if (long.length) warnings.push(`Question ${long.slice(0, 6).join(', ')} looks unusually long — it may have run into the next question. Please check it.`);
 
+  // a stem never keeps its printed question number ("1. What is ..."): strip it when it is followed by the question's first word
+  questions.forEach((q) => { q.text = q.text.replace(/^\s*(?:Q(?:uestion)?\s*\.?\s*)?\d{1,3}\s*[.)]\s+(?=["“(]?[A-Z])/, ''); });
   questions.forEach((q) => { q.options = q.options.slice(0, 8); if (q.correct_index != null && q.correct_index >= q.options.length) q.correct_index = null; delete q.inOption; delete q.skip; delete q.answered; delete q.expectAnswer; delete q.multi; delete q.no; });
   return { questions, warnings, stats: { lines: all.length, skippedNoOptions, keyEntries: keyCount, unnumbered: usedUnnumbered } };
 }

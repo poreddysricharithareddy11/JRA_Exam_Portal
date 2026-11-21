@@ -156,7 +156,7 @@ function qCardView(q, no) {
   return `<div class="qedit" data-id="${q.id}">
     <div class="row mb"><b>Q${no}</b>${status}<span class="right small mute">${q.marks} mark${q.marks === 1 ? '' : 's'}</span></div>
     <p style="margin:0 0 8px;white-space:pre-wrap">${esc(q.text)}</p>
-    <div>${q.options.map((o, i) => `<div class="opt ${q.correct_index === i ? 'right-ans' : ''}"><span>${L[i]}</span><span>${esc(o)}</span></div>`).join('')}</div>
+    <div>${q.options.map((o, i) => `<div class="opt view ${q.correct_index === i ? 'right-ans' : ''}"><span class="ol">${L[i]}</span><span class="ot">${esc(o)}</span></div>`).join('')}</div>
     <label class="row mt" style="cursor:pointer;gap:10px"><input type="checkbox" data-grace ${q.grace ? 'checked' : ''}><span><b>Add marks</b> <span class="small mute">— give this question's marks to every candidate (use it if the question was wrong or unclear)</span></span></label>
     <div class="row mt"><button class="btn sm primary" data-score>Save</button></div>
   </div>`;
