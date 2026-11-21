@@ -118,7 +118,7 @@ const bank = (n) => Array.from({ length: n }, (_, i) =>
     assert.equal(papers.size, 8, '30-of-30: every candidate still has a different order/options');
 
     // ---- locked once attempts exist ----
-    assert.equal((await admin('PUT', `/api/admin/exams/${pid}`, { questions_per_attempt: 10 })).status, 400);
+    assert.equal((await admin('PUT', `/api/admin/exams/${pid}`, { questions_per_attempt: 10 })).status, 409);
     console.log('POOL TESTS PASSED');
   } catch (e) {
     console.error('POOL TEST FAILED:', e);

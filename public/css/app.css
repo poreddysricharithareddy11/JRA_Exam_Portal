@@ -232,3 +232,4 @@ tbody tr{transition:background .12s}
 body.wm::after{content:'';position:fixed;inset:0;background:var(--logo) center 52%/min(52vmin,520px) no-repeat;opacity:.05;pointer-events:none;z-index:6}
 :root[data-theme=dark] body.wm::after{opacity:.07}
 @media print{body.wm::after{display:none}}
+.pill:disabled{opacity:.45;cursor:not-allowed}

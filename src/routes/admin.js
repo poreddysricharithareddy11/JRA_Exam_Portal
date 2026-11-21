@@ -120,6 +120,12 @@ router.put('/exams/:id', async (req, res) => {
   let b; try { b = examBody(req.body || {}, true); } catch (err) { return bad(res, err.message); }
   const m = { ...e, ...b };
   if (Date.parse(m.end_at) <= Date.parse(m.start_at)) return bad(res, 'Closing time must be after opening time.');
+  if (e.published) {
+    // Once published, the only change allowed is to extend the closing time.
+    const touched = Object.keys(b).filter((k) => k !== 'end_at' && String(b[k] ?? '') !== String(e[k] ?? ''));
+    if (touched.length) return bad(res, 'This exam is published, so only its closing time can be changed (extended). Everything else is locked.', 409);
+    if (b.end_at !== undefined && Date.parse(b.end_at) < Date.parse(e.end_at)) return bad(res, 'The closing time can only be extended, not brought forward.', 409);
+  }
   const started = await hasAttempts(e.id);
   if (started && (b.negative_marks !== undefined && b.negative_marks !== e.negative_marks))
     return bad(res, 'Negative marking cannot change after attempts exist.');
@@ -135,6 +141,11 @@ router.put('/exams/:id', async (req, res) => {
 
 router.delete('/exams/:id', async (req, res) => {
   const e = await loadExam(req, res); if (!e) return;
+  // Deleting wipes the questions and every result, so the admin must confirm with their password.
+  const password = String((req.body && req.body.password) || '');
+  if (!password) return bad(res, 'Enter your password to delete this exam.', 400);
+  const me = await db.prepare('SELECT password_hash FROM users WHERE id=?').get(req.user.id);
+  if (!me || !(await pw.verify(password, me.password_hash))) return bad(res, 'Incorrect password. The exam was not deleted.', 403);
   await db.prepare('DELETE FROM exams WHERE id=?').run(e.id);
   res.json({ ok: true });
 });

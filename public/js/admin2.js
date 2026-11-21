@@ -15,80 +15,64 @@ function chartsHTML(done, passPct) {
       <div class="legend"><span><i style="background:var(--ok)"></i>Pass ${pass}</span><span><i style="background:var(--bad)"></i>Fail ${fail}</span></div></div></div>`;
 }
 
-/* ---------------------------- invite & remind --------------------------- */
+/* ---------------------------- invitations & reminders --------------------------- */
 async function inviteTab(box, id) {
   let d = await api('GET', `/api/admin/exams/${id}/audience`);
-  let mode = 'pending', kind = 'reminder', q = '';
+  let kind = 'invite', q = '';
   const sel = new Set();
   const e = d.exam;
   const started = Date.now() >= Date.parse(e.start_at);
-  const yet = () => d.users.filter((u) => u.email && u.attempt_status !== 'submitted').length;
-  const count = () => (mode === 'selected' ? sel.size : mode === 'all' ? d.users.filter((u) => u.email).length : yet());
+  const ended = Date.now() > Date.parse(e.end_at);
 
   box.innerHTML = `
-    ${!d.smtp_configured ? '<div class="alert warn">E-mail is not set up on the server. Add the mail account (SMTP_USER / SMTP_PASS) to the .env file and restart.</div>' : ''}
+    ${!d.smtp_configured ? '<div class="alert warn">E-mail is not set up on the server. Add the mail account settings (see the README) and restart.</div>' : ''}
     ${!e.published ? '<div class="alert warn">Publish the exam first.</div>' : ''}
-    <div class="card"><h3>🔗 Assessment link</h3>
-      <p class="small mute">Opens this assessment after sign-in.</p>
-      <div class="linkbox"><input type="text" id="lnk" readonly value="${esc(d.link)}"><button class="btn" id="cp">Copy link</button><a class="btn" href="${esc(d.link)}" target="_blank" rel="noopener">Open</a></div></div>
-    <div class="card"><h3>✉️ Send email reminder</h3>
-      <p class="small mute">The reminder contains the exam details and the portal link. ${started ? '<b>Not available — the exam has already started.</b>' : 'Sent only when you click send, and only before the exam starts.'}</p>
-      <div class="row mb" style="align-items:stretch">
-        <label class="optcard"><input type="radio" name="mode" value="pending" checked><div><b>Yet to submit <span id="c_p"></span></b><span>Everyone who hasn't completed it</span></div></label>
-        <label class="optcard"><input type="radio" name="mode" value="all"><div><b>All candidates <span id="c_a"></span></b><span>Every registered user</span></div></label>
-        <label class="optcard"><input type="radio" name="mode" value="selected"><div><b>Selected <span id="c_s"></span></b><span>Tick people in the list below</span></div></label></div>
-      <div class="field"><label class="f">Personal message (optional)</label><textarea id="msg" rows="2" maxlength="1000" placeholder="e.g. Please join 10 minutes early and keep your ID ready."></textarea></div>
-      <div class="row"><button class="btn primary lg" id="send">Send</button><span class="small mute">Candidates receive their username and the link — never their password.</span></div></div>
-    <div class="card"><div class="row mb"><h3 style="margin:0">Candidates &amp; delivery status</h3><input type="text" id="aq" placeholder="Search…" style="max-width:220px" class="right"></div>
-      <div class="tw"><table><thead><tr><th><input type="checkbox" id="all"></th><th>Candidate</th><th>E-mail</th><th>Exam status</th><th>Last e-mail</th></tr></thead><tbody id="at"></tbody></table></div></div>`;
+    ${ended ? '<div class="alert warn">This exam has ended.</div>' : ''}
+    <div class="card">
+      <div class="row mb">
+        <h3 style="margin:0">Send e-mail</h3>
+        <div class="filters" id="kinds">
+          <button class="pill on" data-k="invite">Invitation</button>
+          <button class="pill" data-k="reminder" ${started ? 'disabled title="Reminders can only be sent before the exam starts"' : ''}>Reminder</button>
+        </div>
+        <input type="text" id="aq" placeholder="Search candidates…" style="max-width:220px" class="right">
+      </div>
+      <p class="small mute" style="margin:0 0 10px">Choose who receives it: tick the top box to select everyone, or tick individual candidates. The e-mail contains the exam details and the portal link.</p>
+      <div class="tw"><table><thead><tr><th><input type="checkbox" id="all" title="Select everyone"></th><th>Candidate</th><th>E-mail</th><th>Last e-mail</th></tr></thead><tbody id="at"></tbody></table></div>
+      <div class="row mt"><button class="btn primary lg" id="send">Send</button></div>
+    </div>`;
 
   const lastChip = (u) => (!u.last_kind ? '<span class="mute small">Not sent yet</span>'
-    : `<span class="chip ${u.last_status === 'sent' ? 'sent' : u.last_status === 'failed' ? 'failed' : 'pending'}" title="${esc(u.last_error || '')}">${u.last_kind === 'reminder' ? 'Reminder' : 'Invitation'} · ${u.last_status}</span> <span class="small mute">${fmtDT(u.last_sent_at || u.last_at)}${u.sent_count > 1 ? ` · ${u.sent_count}×` : ''}</span>`);
+    : `<span class="chip ${u.last_status === 'sent' ? 'sent' : u.last_status === 'failed' ? 'failed' : 'pending'}" title="${esc(u.last_error || '')}">${u.last_kind === 'reminder' ? 'Reminder' : 'Invitation'} · ${u.last_status}</span> <span class="small mute">${fmtDT(u.last_sent_at || u.last_at)}</span>`);
+  const visible = () => d.users.filter((u) => (u.username + u.full_name + u.email).toLowerCase().includes(q));
 
   function draw() {
-    $('#c_p', box).textContent = `(${yet()})`;
-    $('#c_a', box).textContent = `(${d.users.filter((u) => u.email).length})`;
-    $('#c_s', box).textContent = `(${sel.size})`;
-    const n = count(), b = $('#send', box);
-    b.textContent = `Send reminder to${n} candidate${n === 1 ? '' : 's'}`;
-    b.disabled = !n || !d.smtp_configured || !e.published || started;
-    const rows = d.users.filter((u) => (u.username + u.full_name + u.email).toLowerCase().includes(q));
+    const n = sel.size, b = $('#send', box);
+    b.textContent = `Send ${kind === 'reminder' ? 'reminder' : 'invitation'} to ${n} candidate${n === 1 ? '' : 's'}`;
+    b.disabled = !n || !d.smtp_configured || !e.published || ended || (kind === 'reminder' && started);
+    const rows = visible();
     $('#at', box).innerHTML = rows.length ? rows.map((u) => `<tr>
       <td><input type="checkbox" data-u="${u.id}" ${sel.has(u.id) ? 'checked' : ''} ${u.email ? '' : 'disabled'}></td>
       <td><b>${esc(u.full_name || u.username)}</b><div class="small mute">${esc(u.username)}</div></td>
       <td class="small">${u.email ? esc(u.email) : '<span class="chip failed">no e-mail</span>'}</td>
-      <td>${u.attempt_status === 'submitted' ? '<span class="chip sent">Submitted</span>' : u.attempt_status === 'in_progress' ? '<span class="chip live">Writing</span>' : '<span class="chip">Not started</span>'}</td>
       <td>${lastChip(u)}</td></tr>`).join('')
-      : '<tr><td colspan="5" class="mute" style="text-align:center;padding:26px">No candidates yet. Add users under “User data”.</td></tr>';
-    $$('[data-u]', box).forEach((c) => {
-      c.onchange = () => {
-        if (c.checked) sel.add(+c.dataset.u); else sel.delete(+c.dataset.u);
-        if (sel.size && mode !== 'selected') { mode = 'selected'; $('input[name=mode][value=selected]', box).checked = true; }
-        draw();
-      };
-    });
+      : '<tr><td colspan="4" class="mute" style="text-align:center;padding:26px">No candidates yet. Add users under “User data”.</td></tr>';
+    const withMail = rows.filter((u) => u.email);
+    $('#all', box).checked = withMail.length > 0 && withMail.every((u) => sel.has(u.id));
+    $$('[data-u]', box).forEach((c) => { c.onchange = () => { if (c.checked) sel.add(+c.dataset.u); else sel.delete(+c.dataset.u); draw(); }; });
   }
 
-  $('#cp', box).onclick = async () => {
-    try { await navigator.clipboard.writeText(d.link); } catch (_) { $('#lnk', box).select(); document.execCommand('copy'); }
-    toast('Link copied', 'ok');
-  };
-  $$('input[name=mode]', box).forEach((r) => { r.onchange = () => { mode = r.value; draw(); }; });
+  $$('#kinds .pill', box).forEach((p) => { p.onclick = () => { if (p.disabled) return; kind = p.dataset.k; $$('#kinds .pill', box).forEach((x) => x.classList.toggle('on', x === p)); draw(); }; });
   $('#aq', box).oninput = (ev) => { q = ev.target.value.toLowerCase(); draw(); };
-  $('#all', box).onchange = (ev) => {
-    d.users.filter((u) => u.email && (u.username + u.full_name + u.email).toLowerCase().includes(q))
-      .forEach((u) => { if (ev.target.checked) sel.add(u.id); else sel.delete(u.id); });
-    if (sel.size) { mode = 'selected'; $('input[name=mode][value=selected]', box).checked = true; }
-    draw();
-  };
+  $('#all', box).onchange = (ev) => { visible().filter((u) => u.email).forEach((u) => { if (ev.target.checked) sel.add(u.id); else sel.delete(u.id); }); draw(); };
   async function refresh() { try { d = await api('GET', `/api/admin/exams/${id}/audience`); draw(); } catch (_) { /* keep old view */ } }
   $('#send', box).onclick = async () => {
-    const n = count();
-    if (!await confirmBox(`Send a reminder e-mail with the portal link to${n} candidate${n === 1 ? '' : 's'}?`, 'Send', false)) return;
+    const n = sel.size;
+    if (!await confirmBox(`Send ${kind === 'reminder' ? 'a reminder' : 'an invitation'} e-mail with the portal link to ${n} candidate${n === 1 ? '' : 's'}?`, 'Send', false)) return;
     try {
-      const r = await api('POST', `/api/admin/exams/${id}/notify`, { kind, mode, user_ids: [...sel], message: $('#msg', box).value });
+      const r = await api('POST', `/api/admin/exams/${id}/notify`, { kind, mode: 'selected', user_ids: [...sel] });
       toast(`${r.queued} e-mail(s) queued${r.skipped_no_email ? ` · ${r.skipped_no_email} skipped (no address)` : ''}`, 'ok');
-      refresh();
+      sel.clear(); refresh();
     } catch (err) { fail(err); }
   };
   draw();

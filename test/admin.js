@@ -152,6 +152,33 @@ const wait = async (cond, ms = 12000) => { const t = Date.now(); while (Date.now
     const logoRes = await fetch(BASE + '/brand/logo');
     assert.equal(logoRes.status, 200); assert.match(logoRes.headers.get('content-type'), /^image\//);
 
+    /* ===== a published exam: only the closing time can be extended ===== */
+    const cur = (await call(admin, 'GET', `/api/admin/exams/${eid}`)).data.exam;
+    assert.equal(cur.published, 1);
+    const later = new Date(Date.parse(cur.end_at) + 36e5).toISOString();
+    r = await call(admin, 'PUT', `/api/admin/exams/${eid}`, { name: 'Renamed' });
+    assert.equal(r.status, 409, 'name is locked once published');
+    r = await call(admin, 'PUT', `/api/admin/exams/${eid}`, { start_at: new Date(now - 36e5).toISOString() });
+    assert.equal(r.status, 409, 'opening time is locked once published');
+    r = await call(admin, 'PUT', `/api/admin/exams/${eid}`, { questions_per_attempt: 2 });
+    assert.equal(r.status, 409, 'questions per candidate is locked once published');
+    r = await call(admin, 'PUT', `/api/admin/exams/${eid}`, { num_sets: 3 });
+    assert.equal(r.status, 409, 'number of sets is locked once published');
+    r = await call(admin, 'PUT', `/api/admin/exams/${eid}`, { end_at: new Date(Date.parse(cur.end_at) - 6e4).toISOString() });
+    assert.equal(r.status, 409, 'closing time cannot be brought forward');
+    r = await call(admin, 'PUT', `/api/admin/exams/${eid}`, { end_at: later });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.equal((await call(admin, 'GET', `/api/admin/exams/${eid}`)).data.exam.end_at, later, 'closing time extended');
+    assert.equal((await call(admin, 'GET', `/api/admin/exams/${eid}`)).data.exam.name, cur.name, 'nothing else changed');
+
+    /* ===== deleting an exam needs the admin password ===== */
+    assert.equal((await call(admin, 'DELETE', `/api/admin/exams/${eid}`)).status, 400, 'no password');
+    r = await call(admin, 'DELETE', `/api/admin/exams/${eid}`, { password: 'wrong-password' });
+    assert.equal(r.status, 403); assert.match(r.data.error, /Incorrect password/);
+    assert.equal((await call(admin, 'GET', `/api/admin/exams/${eid}`)).status, 200, 'still there after a wrong password');
+    assert.equal((await call(admin, 'DELETE', `/api/admin/exams/${eid}`, { password: 'Adm1nPass!' })).status, 200, 'deleted with the right password');
+    assert.equal((await call(admin, 'GET', `/api/admin/exams/${eid}`)).status, 404, 'gone');
+
     console.log('ADMIN TESTS PASSED');
   } catch (e) { console.error('ADMIN TEST FAILED:', e); process.exitCode = 1; }
   finally { srv.kill(); smtp.close(); setTimeout(() => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {} process.exit(); }, 600); }

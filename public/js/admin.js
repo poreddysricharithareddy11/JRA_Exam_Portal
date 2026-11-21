@@ -9,6 +9,19 @@ JEP.views.admin = async (p) => {
   location.hash = '#/admin';
 };
 
+/** Ask the admin to type their password. Resolves to the typed text, or null if cancelled. */
+function askPassword(msg) {
+  return new Promise((resolve) => {
+    const m = modal(`<h3>Confirm with your password</h3><p style="white-space:pre-line">${esc(msg)}</p>
+      <div class="field"><input type="password" id="pwc" autocomplete="current-password" placeholder="Admin password"></div>
+      <div class="row mt" style="justify-content:flex-end"><button class="btn" data-close>Cancel</button><button class="btn danger" id="pwok">Delete exam</button></div>`);
+    const input = $('#pwc', m); input.focus();
+    const done = () => { if (!input.value) { input.focus(); return; } m.close(); resolve(input.value); };
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') done(); });
+    m.addEventListener('click', (ev) => { if (ev.target.id === 'pwok') done(); else if (ev.target === m || ev.target.closest('[data-close]')) resolve(null); });
+  });
+}
+
 /* ------------------------------ exam list ------------------------------ */
 async function adminExams() {
   const [{ exams }, stats] = await Promise.all([api('GET', '/api/admin/exams'), api('GET', '/api/admin/stats')]);
@@ -41,8 +54,9 @@ async function adminExams() {
         <div class="row"><a class="btn sm" href="#/admin/exam/${e.id}/results">Results</a><a class="btn sm" href="#/admin/exam/${e.id}/questions">Questions</a>
         <button class="btn sm danger" data-del="${e.id}" data-n="${esc(e.name)}">Delete</button></div></div>`).join('')}`).join('');
     $$('[data-del]', main).forEach((b) => b.onclick = async () => {
-      if (!await confirmBox(`Delete "${b.dataset.n}" together with all its questions and results? This cannot be undone.`, 'Delete exam')) return;
-      try { await api('DELETE', `/api/admin/exams/${b.dataset.del}`); toast('Exam deleted', 'ok'); adminExams(); } catch (e) { fail(e); }
+      const password = await askPassword(`Delete "${b.dataset.n}" together with all its questions and results? This cannot be undone.\nType your admin password to confirm.`);
+      if (password === null) return;
+      try { await api('DELETE', `/api/admin/exams/${b.dataset.del}`, { password }); toast('Exam deleted', 'ok'); adminExams(); } catch (e) { fail(e); }
     });
   }
   $('#srch', main).oninput = (e) => { q = e.target.value.toLowerCase(); draw(); };
@@ -109,8 +123,19 @@ async function adminExam(id, tab) {
   };
   const box = $('#tab', main);
   if (tab === 'settings') {
-    box.innerHTML = `<div class="card">${examFormHTML(exam)}</div>`;
-    $('#ef', box).onsubmit = async (ev) => { ev.preventDefault(); try { await api('PUT', `/api/admin/exams/${id}`, readExamForm(ev.target)); toast('Saved', 'ok'); adminExam(id, 'settings'); } catch (e) { fail(e); } };
+    box.innerHTML = `${exam.published ? '<div class="alert info">This exam is published. You can only <b>extend the closing time</b>; the other settings are locked.</div>' : ''}<div class="card">${examFormHTML(exam)}</div>`;
+    const form = $('#ef', box);
+    if (exam.published) {
+      $$('input, textarea', form).forEach((i) => { if (i.name !== 'end_at') i.disabled = true; });
+      form.elements.end_at.min = toLocalInput(exam.end_at);
+    }
+    form.onsubmit = async (ev) => {
+      ev.preventDefault();
+      try {
+        await api('PUT', `/api/admin/exams/${id}`, exam.published ? { end_at: fromLocalInput(form.elements.end_at.value) } : readExamForm(ev.target));
+        toast('Saved', 'ok'); adminExam(id, 'settings');
+      } catch (e) { fail(e); }
+    };
   } else if (tab === 'results') resultsTab(box, id, results);
   else if (tab === 'invite') inviteTab(box, id);
   else if (tab === 'live') liveTab(box, id);
