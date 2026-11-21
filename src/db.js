@@ -16,7 +16,8 @@ const cfg = require('./config');
 
 const als = new AsyncLocalStorage();           // holds the connection of the transaction we are currently inside
 const ID_TABLES = new Set(['users', 'exams', 'questions', 'attempts', 'notifications', 'question_changes']);
-const DBURL = process.env.DATABASE_URL || '';
+// Neon's copied string ends with "&channel_binding=require", which the Node driver does not support: drop it.
+const DBURL = (process.env.DATABASE_URL || '').trim().replace(/([?&])channel_binding=[^&]*&?/, '$1').replace(/[?&]$/, '');
 
 let impl;
 
