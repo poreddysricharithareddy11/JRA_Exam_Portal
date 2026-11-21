@@ -177,6 +177,15 @@ async function route() {
     if (parts[0] !== 'login') { if (parts.length) store.sset('jep_next', location.hash); location.hash = '#/login'; return; }
     return JEP.views.login();
   }
+  // An e-mailed assessment link opened in a browser that is still signed in as admin: show the sign-in page
+  // (the candidate signs in and lands on the exam), never the admin dashboard.
+  if (parts[0] === 'user' && JEP.me.role === 'admin') {
+    await api('POST', '/api/auth/logout').catch(() => {});
+    JEP.me = null;
+    if (parts.length > 1) store.sset('jep_next', location.hash);
+    location.hash = '#/login';
+    return;
+  }
   if (parts[0] === 'login' || !parts[0]) { location.hash = JEP.me.role === 'admin' ? '#/admin' : '#/user'; return; }
   if (parts[0] !== JEP.me.role) { location.hash = JEP.me.role === 'admin' ? '#/admin' : '#/user'; return; }
 
