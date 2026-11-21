@@ -24,11 +24,13 @@ async function buildResultPdf(attemptId, preloaded) {
 
     // company logo: faint watermark behind every page, small logo top-left of the first page
     let logo = null; try { logo = branding.logoBuffer(); } catch (_) { /* no logo: skip */ }
-    const watermark = () => { if (!logo) return; doc.save(); doc.opacity(0.07); doc.image(logo, (doc.page.width - 380) / 2, (doc.page.height - 380) / 2, { fit: [380, 380] }); doc.restore(); };
+    // decode the logo ONCE per document and reuse it on every page (re-reading the buffer per page cost ~8x the CPU)
+    let logoImg = null; try { if (logo) logoImg = doc.openImage(logo); } catch (_) { /* unreadable logo: skip */ }
+    const watermark = () => { if (!logoImg) return; doc.save(); doc.opacity(0.07); doc.image(logoImg, (doc.page.width - 380) / 2, (doc.page.height - 380) / 2, { fit: [380, 380] }); doc.restore(); };
     doc.on('pageAdded', watermark);
     watermark();
     const HX = logo ? L + 64 : L;                 // header text starts after the logo
-    if (logo) doc.image(logo, L, 36, { fit: [54, 54] });
+    if (logoImg) doc.image(logoImg, L, 36, { fit: [54, 54] });
 
     // Header (left) + marks box (top-right corner)
     doc.fillColor(INK).font('Helvetica-Bold').fontSize(17).text(a.exam_name, HX, 40, { width: CW - 170 - (HX - L) });
@@ -98,7 +100,9 @@ async function buildBankPdf(exam, questions) {
     const L = 40, R = doc.page.width - 40, CW = R - L;
 
     let logo = null; try { logo = branding.logoBuffer(); } catch (_) { /* no logo: skip */ }
-    const watermark = () => { if (!logo) return; doc.save(); doc.opacity(0.07); doc.image(logo, (doc.page.width - 380) / 2, (doc.page.height - 380) / 2, { fit: [380, 380] }); doc.restore(); };
+    // decode the logo ONCE per document and reuse it on every page (re-reading the buffer per page cost ~8x the CPU)
+    let logoImg = null; try { if (logo) logoImg = doc.openImage(logo); } catch (_) { /* unreadable logo: skip */ }
+    const watermark = () => { if (!logoImg) return; doc.save(); doc.opacity(0.07); doc.image(logoImg, (doc.page.width - 380) / 2, (doc.page.height - 380) / 2, { fit: [380, 380] }); doc.restore(); };
     doc.on('pageAdded', watermark);
     watermark();
 
