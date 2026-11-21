@@ -43,7 +43,7 @@ async function inviteTab(box, id) {
     </div>`;
 
   const lastChip = (u) => (!u.last_kind ? '<span class="chip">Not invited</span>'
-    : `<span class="chip ${u.last_status === 'sent' ? 'sent' : u.last_status === 'failed' ? 'failed' : 'pending'}" title="${esc(u.last_error || '')}">${u.last_kind === 'reminder' ? 'Reminder' : 'Invitation'} · ${u.last_status}</span> <span class="small mute">${fmtDT(u.last_sent_at || u.last_at)}</span>`);
+    : `<span class="chip ${u.last_status === 'sent' ? 'sent' : u.last_status === 'failed' ? 'failed' : 'pending'}" title="${esc(u.last_error || '')}">${u.last_kind === 'reminder' ? 'Reminder' : 'Invited'} · ${{ sent: 'e-mail sent', failed: 'e-mail not sent', pending: 'sending…' }[u.last_status] || u.last_status}</span> <span class="small mute">${fmtDT(u.last_sent_at || u.last_at)}</span>`);
   const visible = () => d.users.filter((u) => (u.username + u.full_name + u.email).toLowerCase().includes(q));
 
   function draw() {
