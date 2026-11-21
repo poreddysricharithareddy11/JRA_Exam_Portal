@@ -198,6 +198,36 @@ function stripNoise(lines) {
   });
 }
 
+/**
+ * Section headings are NOT questions: "SECTION A", "Section B: Total Station Operations", "Part II - Levelling",
+ * "Unit 3", "Questions 11 - 20", "General Instructions", or a stand-alone heading line sitting between two question blocks.
+ * They are removed before the questions are read, so they can never become a question or stick to an option.
+ */
+const SECTION_KW = /^(?:section|sec\.?|part|module|unit|chapter|topic|category|group|subject|paper|segment|block|level|round)\s*[-:.]?\s*(?:[A-Za-z]|[IVXivx]{1,4}|\d{1,2})(?=\s|[-:.)–—(]|$)/i;
+const RANGE_LINE = /^[(\[]?\s*(?:questions?|qns?\.?|q\.?)\s*\d{1,3}\s*(?:to|-|–|—|through)\s*(?:q\.?\s*)?\d{1,3}\b/i;     // "Questions 1 – 10", "Q11-Q20"
+const INSTRUCTION_LINE = /^(?:general\s+)?(?:instructions?|directions?)\s*(?:to\s+candidates)?\s*[:\-–—]?\s*$/i;
+function dropHeadings(lines) {
+  const complete = (l) => { const o = l && optMatch(l); return !!l && (findChain(l) || (o && o.letter >= 'D')); };   // a line that ended a block of options
+  return lines.filter((l, i) => {
+    if (!l || qMatch(l) || optMatch(l) || ANS_RE.test(l) || EXPL_RE.test(l)) return true;
+    if (/[?]\s*$/.test(l)) return true;                                    // a question mark: it is a question
+    if (/^[(\[]?[A-Ha-h][)\]]?\.?$/.test(l)) return true;                  // a bare option letter ("B")
+    const next = lines[i + 1], prev = lines[i - 1];
+    const pa = prev && ANS_RE.exec(prev);
+    if (pa && !pa[1].trim()) return true;                                  // "Answer:" with the value on this line
+    const nextOpt = next && optMatch(next);
+    const words = l.split(/\s+/).length;
+    if (words <= 14 && !(nextOpt && nextOpt.letter === 'A') && (SECTION_KW.test(l) || RANGE_LINE.test(l) || INSTRUCTION_LINE.test(l))) return false;
+    // a short stand-alone line between two question blocks: "FUNDAMENTALS OF SURVEYING", "Levelling and Contouring"
+    const endsBlock = i === 0 || complete(prev) || (prev && (ANS_RE.test(prev) || EXPL_RE.test(prev)));
+    if (endsBlock && words <= 12 && !/[.?!;,]\s*$/.test(l) && /^[A-Z0-9]/.test(l) && !(nextOpt && nextOpt.letter === 'A')) {
+      const caps = !/[a-z]/.test(l) && /[A-Z]{3}/.test(l);
+      if ((next && qMatch(next)) || caps) return false;
+    }
+    return true;
+  });
+}
+
 /** Split "A) x B) y C) z" (on one line) into options, keeping letter order. */
 function splitInline(letter, rest) {
   const parts = [{ letter, text: rest }];
@@ -523,7 +553,7 @@ function parseQuestions(raw) {
   const all = normalise(raw).filter(Boolean);
   const split = splitKey(all);
   const key = split.key;
-  const lines = prepOptionRuns(explode(stripNoise(split.lines)));         // split runs-together lines into one line per question, unify option styles
+  const lines = prepOptionRuns(explode(dropHeadings(stripNoise(split.lines))));         // split runs-together lines into one line per question, unify option styles
 
   // Read the paper in two independent ways and keep the better result:
   //   numbered : question numbers mark where each question starts

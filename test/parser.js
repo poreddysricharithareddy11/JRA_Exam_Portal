@@ -225,6 +225,33 @@ async function docxOf(items, tableRows) {
     assert.ok(r.warnings.some((w) => /exactly 4 options/.test(w) && /Q2 \(3\)/.test(w) && /Q3 \(5\)/.test(w)), r.warnings.join(' | '));
   });
 
+  /* ---------------- sections are not questions ---------------- */
+  await t('section headings are ignored: only "1. question" + its options are read, then the key is mapped by number', () => {
+    const paper = ['FUNDAMENTALS OF SURVEYING - MOCK TEST', 'General Instructions:', 'Each question carries one mark.',
+      'SECTION A: Surveying Basics', 'Questions 1 - 2',
+      '1. What is the capital of India?', 'A. Mumbai', 'B. New Delhi', 'C. Kolkata', 'D. Chennai',
+      '2. Which planet is the largest?', 'A. Earth', 'B. Mars', 'C. Jupiter', 'D. Venus',
+      'Section B - Total Station Operations (Q3-Q4)',
+      '3. What is 12 + 15?', 'A. 25', 'B. 26', 'C. 27', 'D. 28',
+      'Levelling and Contouring',
+      '4. The Sun rises in the?', 'A. East', 'B. West', 'C. North', 'D. South',
+      'PART II', '5. Which gas do plants absorb?', 'A. Oxygen', 'B. Carbon dioxide', 'C. Nitrogen', 'D. Helium',
+      'ANSWER KEY', 'Q. No. Ans Q. No. Ans', '1 B 4 A', '2 C 5 B', '3 C'].join('\n');
+    const r = parseQuestions(paper);
+    assert.equal(r.questions.length, 5, 'exactly the 5 real questions');
+    assert.ok(r.questions.every((q) => q.options.length === 4), 'each has 4 options');
+    assert.ok(!r.questions.some((q) => /section|part ii|levelling|instructions|mock test|questions 1/i.test(q.text + ' ' + q.options.join(' '))), 'no heading text inside any question or option');
+    assert.deepEqual(r.questions.map((q) => q.correct_index), [1, 2, 2, 0, 1], 'answers mapped by question number');
+    assert.deepEqual(r.warnings, [], 'nothing to warn about');
+  });
+  await t('headings in other styles (unnumbered paper, Part/Unit/Module, wrapped option, answer on the next line) do not change the result', () => {
+    const r = parseQuestions(['SECTION 1', 'Which gas is most abundant?', '(A) Oxygen', '(B) Nitrogen', '(C) Argon', '(D) Helium', 'Unit 3', 'Total station is used for', '(A) Angles', '(B) Colours', '(C) Weights', '(D) Time'].join('\n'));
+    assert.equal(r.questions.length, 2); assert.ok(r.questions.every((q) => q.options.length === 4));
+    assert.equal(r.questions[0].options[3], 'Helium'); assert.equal(r.questions[1].text, 'Total station is used for');
+    const w = parseQuestions('1. Pick one\nA. red\nB. green\nC. blue\nD. Temporary Bench\nused for levelling\n2. Next\nA. a\nB. b\nC. c\nD. d');
+    assert.equal(w.questions.length, 2); assert.equal(w.questions[0].options[3], 'Temporary Bench used for levelling', 'a wrapped option is still one option');
+  });
+
   /* ---------------- all questions first, ANSWER KEY table at the end ---------------- */
   const KEY = ['A', 'A', 'B', 'D', 'B', 'A', 'B', 'B', 'A', 'B', 'C', 'B', 'A', 'B', 'C', 'B', 'A', 'B', 'B', 'B', 'B', 'B', 'B', 'C', 'B', 'B', 'B', 'B', 'A', 'A', 'B', 'B', 'A', 'A', 'C', 'A', 'A', 'B', 'A', 'B', 'B', 'B', 'B', 'B', 'A', 'A', 'B', 'B', 'B', 'B'];
   const PAPER50 = Array.from({ length: 50 }, (_, i) => `${i + 1}. Which statement number ${i + 1} about surveying is correct?\nA. Option A\nB. Option B\nC. Option C\nD. Option D`).join('\n');
